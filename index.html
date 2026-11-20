@@ -199,6 +199,13 @@ tr.anul td.anl{text-decoration:none}
 .ucard:hover{border-color:var(--pri);background:#FFFAF6}
 .ucard.off{opacity:.55}
 .pinin{font-size:1.8rem;letter-spacing:.5em;text-align:center;min-height:60px!important}
+.svcs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.svc{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;min-height:110px;padding:16px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer}
+.svc:hover{border-color:var(--pri);background:var(--pri-soft)}
+.svc b{font-size:1.2rem;color:var(--pri-text)}
+.svc span{font-size:.85rem;color:var(--ink2)}
+.svc small{color:var(--muted);font-size:.78rem;margin-top:auto}
+@media(max-width:380px){.svcs{grid-template-columns:1fr}}
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:10px auto}
 .keypad button{min-height:58px;font-size:1.3rem;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
 .keypad button:hover{background:var(--pri-soft)}
@@ -293,30 +300,33 @@ footer{max-width:1240px;margin:20px auto 30px;padding:0 16px;color:var(--muted);
    BOCETO v2 — Residencia "Nuestro Hogar"
    Todo dato de este archivo es inventado.
    ========================================================= */
-const VER = 4;
+const VER = 5;
 const KEY = 'nh_boceto_hc';
 const DAY = 864e5, MIN = 6e4, HOUR = 36e5;
 const CORR_MIN = 15;
 
-const ROLES = {enf:'Enfermería', med:'Médico', adm:'Administrativo', admin:'Administrador del sistema'};
+const ROLES = {enf:'Enfermería', med:'Médico', esp:'Especialista', adm:'Administrativo', admin:'Administrador del sistema'};
+const ESPECIALIDADES = ['Kinesiología','Nutrición','Fonoaudiología','Psicología','Terapia ocupacional','Trabajo social'];
+const SERVICIOS = [['enf','Enfermería','Controles, medicación y evolución por turno'],['med','Médicos','Indicaciones y evolución médica'],['esp','Especialistas','Kinesiología, nutrición y otras disciplinas'],['adm','Administrativo','Datos, documentación, ingresos y egresos']];
 /* Matriz de permisos: es la que se usa de verdad para habilitar cada acción */
 const PERM = [
-  ['ver_basicos','Ver listado, datos básicos, alergias y contactos de emergencia',['enf','med','adm','admin']],
-  ['ver_clinica','Ver la historia clínica (antecedentes, indicaciones, controles, evoluciones)',['enf','med']],
-  ['ver_docs','Ver la documentación del residente',['enf','med','adm']],
-  ['ver_agenda','Ver la agenda de turnos y estudios',['enf','med','adm']],
+  ['ver_basicos','Ver listado, datos básicos, alergias y contactos de emergencia',['enf','med','esp','adm','admin']],
+  ['ver_clinica','Ver la historia clínica (antecedentes, indicaciones, controles, evoluciones)',['enf','med','esp']],
+  ['ver_docs','Ver la documentación del residente',['enf','med','esp','adm']],
+  ['ver_agenda','Ver la agenda de turnos y estudios',['enf','med','esp','adm']],
   ['controles','Cargar controles de signos vitales',['enf']],
   ['medicacion','Registrar administración de medicación (dado / no dado)',['enf']],
   ['evol_enf','Evolución de enfermería por turno y mensual',['enf']],
-  ['guardia','Escribir novedades del pase de guardia',['enf','med']],
-  ['incidentes','Registrar caídas e incidentes',['enf','med']],
-  ['escalas','Registrar escalas geriátricas',['enf','med']],
+  ['guardia','Escribir novedades del pase de guardia',['enf','med','esp']],
+  ['incidentes','Registrar caídas e incidentes',['enf','med','esp']],
+  ['escalas','Registrar escalas geriátricas (especialistas: las de su disciplina)',['enf','med','esp']],
+  ['evol_esp','Evolución de especialistas (cada uno en su especialidad)',['esp']],
   ['indicaciones','Indicar, modificar y suspender indicaciones médicas',['med']],
   ['evol_med','Evolución médica semanal y mensual',['med']],
   ['antecedentes','Agregar antecedentes, alergias, medicación habitual y exámenes',['med']],
   ['rangos','Definir rangos de alarma por residente',['med']],
   ['agenda','Agendar y cerrar turnos médicos y estudios',['med','adm']],
-  ['legajo','Ver e imprimir el legajo completo',['enf','med']],
+  ['legajo','Ver e imprimir el legajo completo',['enf','med','esp']],
   ['contingencia','Imprimir la planilla de contingencia',['enf','med']],
   ['datos','Editar datos personales, contactos y obra social',['adm']],
   ['documentacion','Registrar documentación entregada / faltante',['adm']],
@@ -326,8 +336,8 @@ const PERM = [
   ['usuarios','Alta, baja, bloqueo, rol y PIN de usuarios',['admin']],
   ['auditoria','Ver y exportar el registro de auditoría',['admin']],
   ['config','Configuración (sesión, nombre, recordatorio de respaldo)',['admin']],
-  ['anular_propio','Anular con motivo lo que escribió uno mismo',['enf','med','adm']],
-  ['corregir_15','Corregir lo propio dentro de los 15 min (queda la versión anterior)',['enf','med','adm']],
+  ['anular_propio','Anular con motivo lo que escribió uno mismo',['enf','med','esp','adm']],
+  ['corregir_15','Corregir lo propio dentro de los 15 min (queda la versión anterior)',['enf','med','esp','adm']],
   ['borrar','Borrar o sobrescribir un registro clínico',[]]
 ];
 const PERM_MAP = {}; PERM.forEach(p => PERM_MAP[p[0]] = p[2]);
@@ -417,6 +427,7 @@ const ESCALAS={
   Downton:{min:0,max:11,d:'Riesgo de caídas',i:p=>p>=3?'Riesgo alto':'Riesgo bajo',a:p=>p>=3},
   Norton:{min:5,max:20,d:'Riesgo de úlceras por presión',i:p=>p<=9?'Riesgo muy alto':p<=12?'Riesgo alto':p<=14?'Riesgo medio':'Riesgo mínimo',a:p=>p<=12},
   Braden:{min:6,max:23,d:'Riesgo de úlceras por presión',i:p=>p<=12?'Riesgo alto':p<=14?'Riesgo moderado':p<=18?'Riesgo bajo':'Sin riesgo',a:p=>p<=14},
+  MNA:{min:0,max:14,d:'Estado nutricional (MNA-SF)',i:p=>p>=12?'Estado nutricional normal':p>=8?'Riesgo de malnutrición':'Malnutrición',a:p=>p<=11},
   MMSE:{min:0,max:30,d:'Estado cognitivo (Mini-Mental)',i:p=>p>=27?'Sin deterioro':p>=24?'Sospecha de deterioro':p>=12?'Deterioro leve a moderado':'Deterioro grave',a:()=>false}
 };
 const DOC_ITEMS=['DNI (copia)','Credencial de obra social','Certificado de salud de ingreso (Ley 14.263 art. 6 g)','Contrato de residencia firmado','Consentimiento informado de ingreso','Designación de familiar responsable / apoderado','Constancia en Libro de ingresos rubricado (art. 8)','Recetas de la medicación habitual','Directivas anticipadas (si corresponde)','Foto actualizada'];
@@ -426,8 +437,8 @@ const ANT_CATS=['Alergia','Diagnóstico actual','Antecedente patológico','Antec
 const EXA_TIPOS=['Laboratorio','Electrocardiograma','Imagen','Certificado','Otro'];
 const MOTIVOS=['Rechazó la medicación','Dormido/a','En ayuno por estudio','Vómitos','Fuera de la residencia (salida / internación)','Falta de stock','No dar por parámetro (ej.: FC baja)','Otro'];
 const EGR_MOT=['Alta / retiro voluntario','Traslado a otra institución','Internación prolongada','Fallecimiento','Otro'];
-const COL_LBL={ind:'indicación médica',dosis:'administración de medicación',ctl:'control de signos vitales',evm:'evolución médica',eve:'evolución de enfermería',rmes:'evolución mensual',esc:'escala geriátrica',inc:'incidente',age:'turno de agenda',doc:'documentación',nov:'novedad de guardia',ax:'antecedente / examen / medicación habitual'};
-const COLS=['ind','dosis','ctl','evm','eve','rmes','esc','inc','age','doc','nov','ax'];
+const COL_LBL={ind:'indicación médica',dosis:'administración de medicación',ctl:'control de signos vitales',evm:'evolución médica',eve:'evolución de enfermería',evesp:'evolución de especialista',rmes:'evolución mensual',esc:'escala geriátrica',inc:'incidente',age:'turno de agenda',doc:'documentación',nov:'novedad de guardia',ax:'antecedente / examen / medicación habitual'};
+const COLS=['ind','dosis','ctl','evm','eve','evesp','rmes','esc','inc','age','doc','nov','ax'];
 
 /* =========================================================
    DATOS INVENTADOS
@@ -437,7 +448,9 @@ function usersBase(ts){
   const L=[u('u_benitez','Enf.','Laura Benítez','enf','MP 99.101','Mañana','1111'),u('u_duarte','Enf.','Carla Duarte','enf','MP 99.102','Tarde','2222'),
     u('u_rios','Enf.','Marcos Ríos','enf','MP 99.103','Noche','3333'),u('u_ferraro','Dra.','Silvia Ferraro','med','MP 99.001','','4444'),
     u('u_ortiz','Sra.','Paula Ortiz','adm','Administración','','5555'),u('u_luna','Sr.','Javier Luna','admin','Sistemas','','9999'),
-    u('u_castro','Enf.','Rubén Castro','enf','MP 99.104','Franquero','7777','bloqueado')];
+    u('u_castro','Enf.','Rubén Castro','enf','MP 99.104','Franquero','7777','bloqueado'),
+    Object.assign(u('u_paz','Lic.','Valeria Paz','esp','MP 99.201','','6666'),{esp:'Kinesiología'}),
+    Object.assign(u('u_quiroga','Lic.','Martín Quiroga','esp','MP 99.202','','8888'),{esp:'Nutrición'})];
   const o={};L.forEach(x=>o[x.id]=x);return o;
 }
 function residentesBase(dk){
@@ -479,7 +492,7 @@ function seed(){
   const dk=d=>addDays(today,-d), at=(d,h)=>keyToTs(dk(d),h);
   const st={v:VER,seedDay:today,seedTs:now,userAdded:0,users:usersBase(at(420,'09:00')),
     config:{nombre:'Nuestro Hogar',sesionMin:5,backupHoras:24,lastBackup:null,lastBackupHash:''},
-    residents:residentesBase(dk),ind:[],dosis:[],ctl:[],evm:[],eve:[],rmes:[],esc:[],inc:[],age:[],doc:[],nov:[],ax:[],audit:[]};
+    residents:residentesBase(dk),ind:[],dosis:[],ctl:[],evm:[],eve:[],evesp:[],rmes:[],esc:[],inc:[],age:[],doc:[],nov:[],ax:[],audit:[]};
   let n=0; const id=p=>{n++;return p+n;};
   const MED='u_ferraro', ADM='u_ortiz';
   const ING={r1:146,r2:300,r3:90,r4:400,r5:60,r6:200,r7:380};
@@ -630,6 +643,19 @@ function seed(){
   N(1,'21:45','u_duarte','Ramírez con TA 150/92 a la noche; se avisó a la Dra. Ferraro, indica control a la mañana. Visita de la familia de Ledesma.','r1',false,'u_rios');
   N(0,'05:50','u_rios','Ledesma: febrícula 37,8 a las 05 h, se dieron líquidos. Fontana: tos a la madrugada, saturó 89 %, se colocó O₂ 2 l/min y mejoró a 92 %.','',true,null);
 
+  /* --- evolución de especialistas --- */
+  const ES=(resId,d,h,por,especialidad,texto,plan,extra)=>{const t=at(d,h);if(ok(t))st.evesp.push(Object.assign({id:id('k'),resId,ts:t,tc:t,especialidad,texto,plan,peso:'',talla:'',imc:'',por},extra||{}));};
+  ES('r2',9,'10:30','u_paz','Kinesiología','Kinesiología motora. Marcha con andador 20 m con asistencia leve. Equilibrio estático aceptable, dinámico disminuido.','Fortalecimiento de cuádriceps y glúteos, marcha asistida. 2 veces por semana.');
+  ES('r2',6,'10:30','u_paz','Kinesiología','Tolera 25 min de trabajo. Mejor transferencia cama-silla con supervisión. Dolor de cadera 2/10 durante la sesión.','Sumar ejercicios de equilibrio en paralelas.');
+  ES('r2',2,'10:30','u_paz','Kinesiología','Marcha con andador 30 m con supervisión. Test de levantarse y andar: 24 s (riesgo de caídas alto).','Continuar plan. Reevaluar Downton en 2 semanas.');
+  ES('r3',8,'11:30','u_paz','Kinesiología','Kinesiología respiratoria: drenaje y reeducación diafragmática. SatO₂ 93 % en reposo, 90 % tras ejercicio.','3 sesiones por semana. Caminata progresiva.');
+  ES('r3',4,'11:30','u_paz','Kinesiología','Buena técnica inhalatoria. Camina 6 min con una pausa. Disnea Borg 4/10.','Continuar plan.');
+  ES('r3',1,'11:30','u_paz','Kinesiología','Tos más productiva, se trabajó drenaje. Saturó 89 % al final; recupera a 92 % en 3 min de reposo.','Avisar a médica si persiste la desaturación.');
+  ES('r1',12,'09:30','u_quiroga','Nutrición','Evaluación nutricional. Sobrepeso leve, diabetes tipo 2 (HbA1c 7,4 %). Ingesta adecuada; consume pan y postres en las visitas.','Plan hiposódico para diabéticos de 1800 kcal en 4 comidas + colación. Hablar con la familia sobre lo que traen en las visitas.',{peso:80.1,talla:1.72,imc:27.1});
+  ES('r2',7,'09:30','u_quiroga','Nutrición','Evaluación nutricional. Perdió 0,7 kg en el mes. Come la mitad del plato a la tarde. MNA-SF 9: riesgo de malnutrición.','Proponer a la médica suplemento hipercalórico a media tarde. Enfermería: registrar ingesta. Peso semanal.',{peso:51.6,talla:1.55,imc:21.5});
+  {const t=at(7,'09:45');if(ok(t))st.esc.push({id:id('s'),resId:'r2',ts:t,tc:t,tipo:'MNA',puntaje:9,obs:'Evaluación nutricional',por:'u_quiroga'});}
+  {const t=at(2,'10:50');if(ok(t))st.esc.push({id:id('s'),resId:'r2',ts:t,tc:t,tipo:'Downton',puntaje:5,obs:'Reevaluación de kinesiología',por:'u_paz'});}
+
   /* --- resúmenes mensuales del mes anterior --- */
   const tr=keyToTs(addDays(today,-(new Date(now).getDate())),'18:00'),mp=dayKey(tr).slice(0,7);
   [['r1','Mes con buen control glucémico. TA con tendencia a valores altos hacia fin de mes. Sin internaciones.','Mes sin caídas ni incidencias. Buena adherencia a la medicación.'],
@@ -647,6 +673,8 @@ function seed(){
   for(const c of st.ctl)P(c.tc,c.por,c.papel?'Control de signos vitales (cargado desde papel)':'Control de signos vitales',c.resId,'');
   for(const e of st.evm)P(e.ts,e.por,'Evolución médica semanal',e.resId,'');
   for(const e of st.eve)P(e.ts,e.por,'Evolución de enfermería',e.resId,'Turno '+e.turno);
+  for(const e of st.evesp)P(e.ts,e.por,'Evolución de especialista ('+e.especialidad+')',e.resId,'');
+  [9,8,6,4,2,1].forEach(d=>P(at(d,'10:20'),'u_paz','Ingreso al sistema'));[12,7].forEach(d=>P(at(d,'09:20'),'u_quiroga','Ingreso al sistema'));
   for(const e of st.rmes)P(e.ts,e.por,'Evolución mensual',e.resId,mesLabel(e.mes));
   for(const e of st.esc)P(e.tc,e.por,'Escala '+e.tipo,e.resId,String(e.puntaje));
   for(const e of st.inc)P(e.tc,e.por,'Incidente: '+e.tipo,e.resId,'');
@@ -675,7 +703,7 @@ function rol(){const u=me();return u?u.rol:'';}
 function can(p){return !!SESSION&&(PERM_MAP[p]||[]).includes(rol());}
 function canW(p,r){return can(p)&&(!r||r.estado==='activo');}
 function uName(id){const u=S.users[id];return u?u.t+' '+u.n:String(id||'');}
-function uFull(id){const u=S.users[id];if(!u)return String(id||'');return u.t+' '+u.n+' ('+((u.rol==='enf'||u.rol==='med')?u.mat:ROLES[u.rol])+')';}
+function uFull(id){const u=S.users[id];if(!u)return String(id||'');if(u.rol==='esp')return u.t+' '+u.n+' ('+(u.esp||'Especialista')+', '+u.mat+')';return u.t+' '+u.n+' ('+((u.rol==='enf'||u.rol==='med')?u.mat:ROLES[u.rol])+')';}
 function getRes(id){return S.residents.find(r=>r.id===id);}
 function getInd(id){return S.ind.find(i=>i.id===id);}
 function find(col,id){return S[col].find(x=>x.id===id);}
@@ -694,7 +722,7 @@ function add(col,o,accion){
   audit(accion||('Alta de '+COL_LBL[col]),o.resId,o.papel?'Cargado desde papel; hecho el '+fdt(o.ts):'');save();return o;
 }
 function canAnular(col,x){if(!x||x.anul||x.corr||!can('anular_propio'))return false;if(x.por===SESSION.user)return true;return col==='ind'&&rol()==='med';}
-function canCorregir(col,x){return ['ctl','evm','eve','nov','inc','esc'].includes(col)&&x&&!x.anul&&!x.corr&&can('corregir_15')&&x.por===SESSION.user&&Date.now()-(x.tc||x.ts)<CORR_MIN*MIN;}
+function canCorregir(col,x){return ['ctl','evm','eve','evesp','nov','inc','esc'].includes(col)&&x&&!x.anul&&!x.corr&&can('corregir_15')&&x.por===SESSION.user&&Date.now()-(x.tc||x.ts)<CORR_MIN*MIN;}
 
 /* ---------- sesión ---------- */
 function doLogin(userId,pin){
@@ -709,7 +737,7 @@ function doLogin(userId,pin){
 }
 function logout(auto){
   if(!SESSION)return;audit(auto?'Cierre automático por inactividad':'Cierre de sesión');save();SESSION=null;closeModal();
-  LOGIN_MSG=auto?'La sesión se cerró sola por '+S.config.sesionMin+' minutos sin uso. Volvé a ingresar.':'Sesión cerrada.';UI.loginUser=null;render();
+  LOGIN_MSG=auto?'La sesión se cerró sola por '+S.config.sesionMin+' minutos sin uso. Volvé a ingresar.':'Sesión cerrada.';UI.loginUser=null;UI.loginSvc=null;render();
 }
 function checkIdle(){
   const w=$('#idleWarn');if(!SESSION){if(w)w.hidden=true;return;}
@@ -771,7 +799,7 @@ const TABS=[
   ['datos','Datos personales e ingreso','ver_basicos'],['docs','Documentación','ver_docs'],
   ['ant','Antecedentes y alergias','ver_clinica'],['medhab','Medicación habitual','ver_clinica'],['exa','Exámenes de ingreso','ver_clinica'],
   ['esc','Escalas geriátricas','ver_clinica'],['ind','Indicaciones médicas','ver_clinica'],['dosis','Administración de medicación','ver_clinica'],
-  ['ctl','Controles de enfermería','ver_clinica'],['evm','Evolución médica semanal','ver_clinica'],['eve','Evolución de enfermería','ver_clinica'],
+  ['ctl','Controles de enfermería','ver_clinica'],['evm','Evolución médica semanal','ver_clinica'],['eve','Evolución de enfermería','ver_clinica'],['evesp','Evolución de especialistas','ver_clinica'],
   ['inc','Caídas e incidentes','ver_clinica'],['age','Agenda de turnos','ver_agenda'],['mes','Resumen mensual','ver_clinica'],['legajo','Legajo (imprimir)','legajo']
 ];
 const PAGES={home:['Residentes','ver_basicos'],guardia:['Pase de guardia','ver_clinica'],agenda:['Agenda','ver_agenda'],contingencia:['Planilla de contingencia','contingencia'],
@@ -804,7 +832,7 @@ function render(){
   $('#seedNote').textContent='Datos ficticios generados el '+fdKey(S.seedDay)+' · se guardan solo en este navegador';
   if(!SESSION){$('#usr').innerHTML='';$('#nav').innerHTML='';$('#app').innerHTML=renderLogin();return;}
   const u=me();
-  $('#usr').innerHTML=`<div class="who"><b>${esc(u.t+' '+u.n)}</b><small>${esc(ROLES[u.rol])} · se cierra sola a los ${S.config.sesionMin} min sin uso</small></div><button class="btn sm on-pri" onclick="logout(false)">Cerrar sesión</button>`;
+  $('#usr').innerHTML=`<div class="who"><b>${esc(u.t+' '+u.n)}</b><small>${esc(ROLES[u.rol])}${u.esp?' · '+esc(u.esp):''} · se cierra sola a los ${S.config.sesionMin} min sin uso</small></div><button class="btn sm on-pri" onclick="logout(false)">Cerrar sesión</button>`;
   const nl=novSinLeer().length,bk=backupVencido();
   $('#nav').innerHTML='<div class="nav-in">'+Object.keys(PAGES).filter(pageOk).map(k=>{
     const on=(VW.page===k)||(k==='home'&&VW.page==='res');let b='';
@@ -824,17 +852,27 @@ function renderLogin(){
   if(UI.loginUser&&S.users[UI.loginUser]){
     const u=S.users[UI.loginUser];
     return `<div class="login"><div class="card"><button class="btn sm" onclick="UI.loginUser=null;LOGIN_MSG='';render()">← Elegir otro usuario</button>
-      <h2 style="margin:14px 0 4px">${esc(u.t+' '+u.n)}</h2><div class="muted">${esc(ROLES[u.rol])}${u.turno?' · turno '+esc(u.turno.toLowerCase()):''}</div>
+      <h2 style="margin:14px 0 4px">${esc(u.t+' '+u.n)}</h2><div class="muted">${esc(ROLES[u.rol])}${u.esp?' · '+esc(u.esp):''}${u.turno?' · turno '+esc(u.turno.toLowerCase()):''}</div>
       <form onsubmit="loginSubmit(event)" style="max-width:340px;margin:16px auto 0">
         <label class="fl">PIN<input class="pinin" id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" required autofocus></label>
         <div class="keypad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" onclick="pinKey('${n}')">${n}</button>`).join('')}<button type="button" onclick="pinKey('del')" aria-label="Borrar">←</button><button type="button" onclick="pinKey('0')">0</button><button type="submit" class="btn pri" style="font-size:1rem">Entrar</button></div>
         <div class="merr" id="lerr">${esc(LOGIN_MSG)}</div></form></div></div>`;
   }
+  const card=u=>`<button class="ucard ${u.estado!=='activo'?'off':''}" onclick="UI.loginUser='${u.id}';LOGIN_MSG='';render()"><div class="av">${esc(u.n.split(' ').map(x=>x[0]).join('').slice(0,2))}</div><div><b>${esc(u.t+' '+u.n)}</b><div class="small muted">${esc(u.esp||ROLES[u.rol])}${u.turno?' · '+esc(u.turno):''}${u.estado!=='activo'?' · <b style="color:var(--bad)">'+esc(u.estado.toUpperCase())+'</b>':''}</div><div class="small">PIN demo: <b>${esc(u.pin)}</b></div></div></button>`;
+  const msg=LOGIN_MSG?`<div class="status warn">${esc(LOGIN_MSG)}</div>`:'';
+  if(UI.loginSvc){
+    const sv=UI.loginSvc==='admin'?['admin','Administración del sistema']:SERVICIOS.find(s=>s[0]===UI.loginSvc);
+    const lst=us.filter(u=>u.rol===UI.loginSvc&&u.estado!=='baja');
+    return `<div class="login"><div class="card"><button class="btn sm" onclick="UI.loginSvc=null;UI.loginUser=null;LOGIN_MSG='';render()">← Cambiar servicio</button>
+      <h2 style="margin:14px 0 4px">${esc(sv[1])}</h2><p class="muted small" style="margin-top:0">Tocá tu nombre y poné tu PIN.</p>${msg}
+      <div class="ucards">${lst.map(card).join('')||'<p class="empty">No hay usuarios en este servicio.</p>'}</div></div></div>`;
+  }
   return `<div class="login"><div class="card"><h2>Ingreso al sistema</h2>
-    <p class="hint">Cada persona entra con su usuario: así queda registrado quién escribió cada cosa. <b>En el boceto se entra con un PIN de 4 números que se muestra abajo.</b> En el sistema real va una contraseña segura personal, y se puede sumar un segundo factor.</p>
-    ${LOGIN_MSG?`<div class="status warn">${esc(LOGIN_MSG)}</div>`:''}
-    <div class="ucards">${us.map(u=>`<button class="ucard ${u.estado!=='activo'?'off':''}" onclick="UI.loginUser='${u.id}';LOGIN_MSG='';render()"><div class="av">${esc(u.n.split(' ').map(x=>x[0]).join('').slice(0,2))}</div><div><b>${esc(u.t+' '+u.n)}</b><div class="small muted">${esc(ROLES[u.rol])}${u.turno?' · '+esc(u.turno):''}${u.estado!=='activo'?' · <b style="color:var(--bad)">'+esc(u.estado.toUpperCase())+'</b>':''}</div><div class="small">PIN demo: <b>${esc(u.pin)}</b></div></div></button>`).join('')}</div>
-    <h3 class="sub">Usuarios y PIN de la demo</h3><div class="tscroll"><table><thead><tr><th>Usuario</th><th>Rol</th><th>PIN</th><th>Estado</th></tr></thead><tbody>${us.map(u=>`<tr><td>${esc(u.t+' '+u.n)}</td><td>${esc(ROLES[u.rol])}</td><td><b>${esc(u.pin)}</b></td><td>${esc(u.estado)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="hint">Elegí tu servicio, tocá tu nombre y poné tu PIN: así queda registrado quién escribió cada cosa. <b>En el boceto los PIN están a la vista.</b> En el sistema real va una contraseña segura personal, y se puede sumar un segundo factor.</p>
+    ${msg}
+    <div class="svcs">${SERVICIOS.map(s=>{const n=us.filter(u=>u.rol===s[0]&&u.estado==='activo').length;return `<button class="svc" onclick="UI.loginSvc='${s[0]}';LOGIN_MSG='';render()"><b>${s[1]}</b><span>${s[2]}</span><small>${n} usuario${n===1?'':'s'} activo${n===1?'':'s'}</small></button>`;}).join('')}</div>
+    <div style="text-align:center;margin-top:14px"><button class="btn link" onclick="UI.loginSvc='admin';LOGIN_MSG='';render()">Administración del sistema</button></div>
+    <h3 class="sub">Usuarios y PIN de la demo</h3><div class="tscroll"><table><thead><tr><th>Usuario</th><th>Servicio / rol</th><th>PIN</th><th>Estado</th></tr></thead><tbody>${us.map(u=>`<tr><td>${esc(u.t+' '+u.n)}</td><td>${esc(ROLES[u.rol])}${u.esp?' — '+esc(u.esp):''}</td><td><b>${esc(u.pin)}</b></td><td>${esc(u.estado)}</td></tr>`).join('')}</tbody></table></div>
     <p class="small muted" style="margin-top:10px">Tras 5 PIN incorrectos el usuario se bloquea. La sesión se cierra sola después de ${S.config.sesionMin} minutos sin uso.</p></div></div>`;
 }
 function pinKey(k){const i=$('#pin');if(!i)return;if(k==='del')i.value=i.value.slice(0,-1);else if(i.value.length<6)i.value+=k;}
@@ -876,7 +914,7 @@ function algBadge(r){const a=alergiasDe(r);return a.length?`<span class="alg">AL
 function renderRes(){
   const r=getRes(VW.resId),al=alertas(r);const tabs=TABS.filter(t=>can(t[2]));
   if(!tabs.some(t=>t[0]===VW.tab))VW.tab='datos';
-  const T={datos:tabDatos,docs:tabDocs,ant:tabAnt,medhab:tabMedHab,exa:tabExa,esc:tabEsc,ind:tabInd,dosis:tabDosis,ctl:tabCtl,evm:tabEvm,eve:tabEve,inc:tabInc,age:tabAge,mes:tabMes,legajo:tabLegajo};
+  const T={datos:tabDatos,docs:tabDocs,ant:tabAnt,medhab:tabMedHab,exa:tabExa,esc:tabEsc,ind:tabInd,dosis:tabDosis,ctl:tabCtl,evm:tabEvm,eve:tabEve,evesp:tabEvesp,inc:tabInc,age:tabAge,mes:tabMes,legajo:tabLegajo};
   return `<div class="wrap"><button class="btn sm no-print" style="margin-bottom:10px" onclick="go('home')">← Volver a residentes</button>
     <section class="card rhead"><div><h1>${esc(r.ap+', '+r.no)}</h1><div class="rmeta">${edad(r.nac)} años · DNI ${esc(r.dni)} · ${esc(r.hab)} · ${esc(r.os)} · Ingreso ${fdKey(r.ingreso)}</div>
       <div class="row" style="margin-top:8px">${algBadge(r)}<button class="btn sm" onclick="verContactos('${r.id}')">Contactos de emergencia</button></div></div>
@@ -1045,10 +1083,11 @@ function escHtml(r,pr){
 function tabEsc(r){return `<div class="card"><div class="sec-h"><h2>Escalas geriátricas</h2>${canW('escalas',r)?`<button class="btn pri" onclick="formEsc('${r.id}')">+ Nueva valoración</button>`:''}</div><p class="hint">Se registra el puntaje total y la interpretación sale sola (puntos de corte de referencia; en el sistema real los define la residencia). Conviene reevaluar al ingreso, cada 6 meses y después de una caída o internación.</p>${escHtml(r,false)}</div>`;}
 function formEsc(rid,corrId){
   const r=getRes(rid),o=corrId?find('esc',corrId):{tipo:'Barthel',puntaje:'',obs:''};if(!canW('escalas',r))return deny('registrar escalas',rid);
-  modal(corrId?'Corregir valoración':'Nueva valoración',`<div class="glabel">Escala</div><div class="chips">${Object.keys(ESCALAS).map(k=>`<label><input type="radio" name="tipo" value="${k}"${o.tipo===k?' checked':''}><span>${k} (${ESCALAS[k].min}-${ESCALAS[k].max})</span></label>`).join('')}</div>
+  const perm=escPermitidas();if(corrId&&!perm.includes(o.tipo))perm.push(o.tipo);if(!perm.includes(o.tipo))o.tipo=perm[0];
+  modal(corrId?'Corregir valoración':'Nueva valoración',`${rol()==='esp'?`<p class="small muted">Como ${esc(me().esp||'especialista')} podés cargar: ${perm.join(', ')}.</p>`:''}<div class="glabel">Escala</div><div class="chips">${perm.map(k=>`<label><input type="radio" name="tipo" value="${k}"${o.tipo===k?' checked':''}><span>${k} (${ESCALAS[k].min}-${ESCALAS[k].max})</span></label>`).join('')}</div>
     <label class="fl">Puntaje total<input name="puntaje" inputmode="numeric" value="${esc(o.puntaje)}" required></label><label class="fl">Observaciones<input name="obs" value="${esc(o.obs)}"></label>${corrId?'':papelBlock()}`,corrId?'Guardar corrección':'Guardar',fd=>{
     const t=fd.get('tipo'),p=Number(String(fd.get('puntaje')).replace(',','.')),E=ESCALAS[t];
-    if(!E)return 'Elegí la escala.';if(!Number.isInteger(p)||p<E.min||p>E.max)return `El puntaje de ${t} va de ${E.min} a ${E.max}.`;
+    if(!E||!perm.includes(t))return 'Elegí una escala permitida.';if(!Number.isInteger(p)||p<E.min||p>E.max)return `El puntaje de ${t} va de ${E.min} a ${E.max}.`;
     const x={resId:rid,tipo:t,puntaje:p,obs:String(fd.get('obs')||'').trim()};return saveRec('esc',x,fd,corrId,'Escala '+t);});
 }
 
@@ -1175,7 +1214,7 @@ function saveRec(col,x,fd,corrId,accion){
   if(fd&&fd.get('papel')){const t=parseDtLocal(fd.get('papelTs'));if(isNaN(t))return 'Poné la fecha y hora real.';if(t>Date.now()+5*MIN)return 'La fecha y hora real no puede ser futura.';if(t<Date.now()-7*DAY)return 'Solo se cargan desde papel registros de los últimos 7 días.';x.ts=t;x.papel=true;}
   add(col,x,accion);render();toast(x.papel?'Guardado como cargado desde papel':'Guardado');return true;
 }
-function corregir(col,id){const x=find(col,id);if(!canCorregir(col,x)){toast('Solo su autor, dentro de los '+CORR_MIN+' min.');return;}({ctl:formCtl,evm:formEvm,eve:formEve,inc:formInc,esc:formEsc,nov:formNov})[col](x.resId,id);}
+function corregir(col,id){const x=find(col,id);if(!canCorregir(col,x)){toast('Solo su autor, dentro de los '+CORR_MIN+' min.');return;}({ctl:formCtl,evm:formEvm,eve:formEve,evesp:formEsp,inc:formInc,esc:formEsc,nov:formNov})[col](x.resId,id);}
 
 /* ---------- controles ---------- */
 function tabCtl(r){
@@ -1305,6 +1344,30 @@ function formEve(rid,corrId){
     if(!x.texto&&!x.higiene&&!x.alim&&!x.animo&&!x.descanso&&!x.movil&&(!x.incid||x.incid==='Sin incidencias'))return 'Marcá al menos una opción o escribí una novedad.';    return saveRec('eve',x,fd,corrId,'Evolución de enfermería');});
 }
 
+/* ---------- evolución de especialistas ---------- */
+function escPermitidas(){const u=me();if(!u)return [];if(u.rol!=='esp')return Object.keys(ESCALAS);return u.esp==='Nutrición'?['MNA','Barthel']:u.esp==='Kinesiología'?['Barthel','Downton']:['Barthel'];}
+function evespList(r,pr,fil){const l=byRes('evesp',r.id,true).filter(x=>!fil||x.especialidad===fil).slice().reverse();
+  return l.length?l.map(x=>`<div class="rec ${recCls(x)}"><div class="top2"><b>${fd(x.ts)} — <span class="pill pri">${esc(x.especialidad)}</span></b>${firma(x.por,x.ts)}</div><div class="body" style="margin-top:6px">${esc(x.texto)}${x.plan?`<div style="margin-top:6px"><b>Plan / objetivos:</b> ${esc(x.plan)}</div>`:''}${x.peso!==''&&x.peso!=null?`<div class="small" style="margin-top:6px">Peso ${num(x.peso)} kg${x.talla?' · Talla '+num(x.talla)+' m · IMC <b>'+num(x.imc)+'</b>':''}</div>`:''}</div>${recNotes('evesp',x)}${pr?'':recActs('evesp',x)}</div>`).join(''):'<p class="empty">Sin evoluciones de especialistas.</p>';}
+function tabEvesp(r){
+  const pres=[...new Set(byRes('evesp',r.id,true).map(x=>x.especialidad))];if(UI.espFil&&!pres.includes(UI.espFil))UI.espFil='';
+  return `<div class="card"><div class="sec-h"><h2>Evolución de especialistas</h2>${canW('evol_esp',r)?`<button class="btn pri" onclick="formEsp('${r.id}')">+ Nueva evolución de ${esc((me().esp||'').toLowerCase())}</button>`:''}</div>
+    <p class="hint">Kinesiología, nutrición y otras disciplinas. Cada especialista escribe en su especialidad, con fecha y firma, y no puede modificar lo de otros.</p>${can('evol_esp')?'':lockMsg('evol_esp','escribir evoluciones de especialistas')}
+    <div class="seg"><button class="${!UI.espFil?'on':''}" onclick="UI.espFil='';render()">Todas</button>${pres.map(e=>`<button class="${UI.espFil===e?'on':''}" onclick="UI.espFil='${esc(e)}';render()">${esc(e)}</button>`).join('')}</div>
+    <div style="margin-top:12px">${evespList(r,false,UI.espFil)}</div></div>`;
+}
+function formEsp(rid,corrId){
+  const r=getRes(rid);if(!canW('evol_esp',r))return deny('escribir evolución de especialistas',rid);
+  const o=corrId?find('evesp',corrId):{texto:'',plan:'',peso:'',talla:''};const espc=corrId?o.especialidad:(me().esp||'Otra');const nut=espc==='Nutrición';
+  modal(corrId?'Corregir evolución':'Evolución de '+espc.toLowerCase()+' — '+r.ap,`<p class="small">Especialidad: <b>${esc(espc)}</b></p><label class="fl">Evaluación / sesión<textarea name="texto" rows="5" required>${esc(o.texto)}</textarea></label><label class="fl">Plan / objetivos<textarea name="plan" rows="3">${esc(o.plan)}</textarea></label>
+    ${nut?`<div class="fgrid"><label class="fl">Peso (kg)<input name="peso" inputmode="decimal" value="${esc(num(o.peso))}"></label><label class="fl">Talla (m)<input name="talla" inputmode="decimal" value="${esc(num(o.talla))}" placeholder="Ej.: 1,62"></label></div><p class="small muted">El IMC se calcula solo. El peso de los controles diarios lo sigue cargando enfermería.</p>`:''}${corrId?'':papelBlock()}<p class="small muted">Firma: ${esc(uFull(SESSION.user))}</p>`,corrId?'Guardar corrección':'Firmar y guardar',fd=>{
+    const t=String(fd.get('texto')||'').trim();if(t.length<5)return 'Escribí la evolución.';
+    const x={resId:rid,especialidad:espc,texto:t,plan:String(fd.get('plan')||'').trim(),peso:'',talla:'',imc:''};
+    if(nut){const p=parseN(fd.get('peso')),ta=parseN(fd.get('talla'));
+      if(p!==''||ta!==''){if(p===''||isNaN(p)||p<20||p>250)return 'Peso entre 20 y 250 kg.';x.peso=Math.round(p*10)/10;
+        if(ta!==''){if(isNaN(ta)||ta<1||ta>2.2)return 'Talla en metros, entre 1,00 y 2,20.';x.talla=Math.round(ta*100)/100;x.imc=Math.round(p/(ta*ta)*10)/10;}}}
+    return saveRec('evesp',x,fd,corrId,'Evolución de especialista ('+espc+')');});
+}
+
 /* ---------- caídas e incidentes ---------- */
 function incList(r,pr){const l=byRes('inc',r.id,true).slice().reverse();return l.length?l.map(x=>`<div class="rec ${recCls(x)}"><div class="top2"><b>${esc(x.tipo)} — ${fdt(x.ts)}</b>${firma(x.por,x.tc)}</div>
   <div class="body small" style="margin-top:6px">${kv([['Lugar',esc(x.lugar||'—')],['Lesiones',esc(x.lesiones)+(x.lesDet?' — '+esc(x.lesDet):'')],['Testigo',esc(x.testigo||'—')],['Aviso',`Médico: ${esc(x.avMed)} · Familia: ${esc(x.avFam)}`],['Qué pasó',esc(x.texto)],['Medidas tomadas',esc(x.medidas||'—')]])}</div>${recNotes('inc',x)}${pr?'':recActs('inc',x)}</div>`).join(''):'<p class="empty">Sin incidentes registrados.</p>';}
@@ -1373,6 +1436,7 @@ function renderGuardia(){
     S.ind.filter(i=>i.resId===r.id&&!i.anul&&(i.fecha>=desde||(i.susp&&i.susp.fecha>=desde))).forEach(i=>it.push(['info',(i.susp&&i.susp.fecha>=desde?'Indicación SUSPENDIDA: ':i.reemplazaA?'Indicación MODIFICADA: ':'Indicación NUEVA: ')+i.farmaco+' '+i.dosis]));
     byRes('inc',r.id).filter(x=>x.ts>=desde).forEach(x=>it.push(['bad','Incidente: '+x.tipo+' '+ft(x.ts)]));
     byRes('evm',r.id).filter(x=>x.ts>=desde).forEach(()=>it.push(['info','Nueva evolución médica']));
+    byRes('evesp',r.id).filter(x=>x.ts>=desde).forEach(x=>it.push(['info','Nueva evolución de '+x.especialidad+(x.plan?': '+x.plan:'')]));
     return [r,it];}).filter(x=>x[1].length);
   const nov=S.nov.filter(n=>n.ts>=now-48*HOUR).sort((a,b)=>b.ts-a.ts);
   return `<div class="wrap"><div class="card"><div class="sec-h"><h2>Pase de guardia — turno ${turnoDe(now).toLowerCase()} (${TURNO_TXT[turnoDe(now)]})</h2>${can('guardia')?`<button class="btn pri" onclick="formNov('')">+ Escribir novedad</button>`:''}</div>
@@ -1416,8 +1480,8 @@ function statsMes(r,mes){
   const huecos=[],prev=allEvm.filter(x=>x.ts<p0).pop();let cur=prev?prev.ts:Math.max(p0,keyToTs(r.ingreso,'00:00'));
   evm.forEach(x=>{if(x.ts-cur>7*DAY)huecos.push('entre el '+fd(cur)+' y el '+fd(x.ts));cur=x.ts;});
   if(pE-cur>7*DAY)huecos.push('desde el '+fd(cur)+' sin evolución');
-  const eve=S.eve.filter(x=>x.resId===r.id&&inM(x)),inc=S.inc.filter(x=>x.resId===r.id&&inM(x));
-  return {nCtl:c.length,filas,dad,no,sos,evm,huecos,eve,inc};
+  const eve=S.eve.filter(x=>x.resId===r.id&&inM(x)),inc=S.inc.filter(x=>x.resId===r.id&&inM(x)),evesp=S.evesp.filter(x=>x.resId===r.id&&inM(x));
+  return {nCtl:c.length,filas,dad,no,sos,evm,huecos,eve,inc,evesp};
 }
 function statsHtml(r,mes){
   const s=statsMes(r,mes);let h=`<h3 class="sub">Controles de enfermería (${s.nCtl} registros)</h3>`;
@@ -1428,6 +1492,7 @@ function statsHtml(r,mes){
   h+=`<h3 class="sub">Evoluciones médicas (${s.evm.length})</h3><p>${s.evm.length?s.evm.map(x=>fd(x.ts)).join(' · '):'Ninguna'}</p>`;
   h+=s.huecos.length?`<div class="status bad">Semanas sin evolución médica: ${s.huecos.join('; ')}</div>`:'<div class="status ok">Evolución semanal cumplida en el período.</div>';
   h+=`<h3 class="sub">Enfermería</h3><p>Notas de turno: <b>${s.eve.length}</b> · incidentes registrados: <b>${s.inc.length}</b></p>`;
+  {const cnt={};s.evesp.forEach(x=>cnt[x.especialidad]=(cnt[x.especialidad]||0)+1);h+=`<h3 class="sub">Especialistas</h3><p>${Object.keys(cnt).length?Object.keys(cnt).map(k=>esc(k)+': <b>'+cnt[k]+'</b>').join(' · '):'Sin evoluciones de especialistas este mes.'}</p>`;}
   if(s.inc.length)h+='<ul class="li">'+s.inc.map(x=>`<li>${fdt(x.ts)} — <b>${esc(x.tipo)}</b>: ${esc(x.texto)}</li>`).join('')+'</ul>';
   return h;
 }
@@ -1467,7 +1532,7 @@ function imprimir(que,rid){audit(que==='legajo'?'Impresión / PDF de legajo':'Im
 function lgEnt(x,inner){return `<div class="lg-ent ${recCls(x)}"><div class="tx">${inner}</div>${x.papel?`<div class="small">Cargado desde papel el ${fdt(x.tc)}.</div>`:''}${x.corr?`<div class="small">Corregido por su autor el ${fdt(x.corr.fecha)}.</div>`:''}${x.anul?`<div class="small" style="color:#C62828">ANULADO el ${fdt(x.anul.fecha)} por ${esc(uFull(x.anul.por))}. Motivo: ${esc(x.anul.motivo)}</div>`:''}</div>`;}
 function legajoHtml(r){
   const now=Date.now();
-  const SEC=['Datos personales e ingreso','Documentación','Antecedentes y alergias','Medicación habitual al ingreso','Exámenes de ingreso','Escalas geriátricas','Indicaciones médicas (historial completo)','Administración de medicación','Controles de enfermería','Evolución médica','Evolución de enfermería','Caídas e incidentes','Agenda de turnos y estudios','Resúmenes mensuales','Cierre y firmas'];
+  const SEC=['Datos personales e ingreso','Documentación','Antecedentes y alergias','Medicación habitual al ingreso','Exámenes de ingreso','Escalas geriátricas','Indicaciones médicas (historial completo)','Administración de medicación','Controles de enfermería','Evolución médica','Evolución de enfermería','Evolución de especialistas','Caídas e incidentes','Agenda de turnos y estudios','Resúmenes mensuales','Cierre y firmas'];
   const sec=(n,body)=>`<section class="lg-sec"><h2>${n}. ${SEC[n-1]}</h2>${body}</section>`;
   let h=`<article class="legajo"><section class="lg-cover"><div class="est">${esc('Residencia de Adultos Mayores "'+S.config.nombre+'"')}</div><div class="small">Calle Inventada 500, Bahía Blanca, Prov. de Buenos Aires (ficticio)<br>Habilitación provincial N° 0000/00 (ficticio) · Categoría A — Res. 3904/2013 art. 5</div>
     <div class="tit">LEGAJO PERSONAL E HISTORIA CLÍNICA</div><div class="small">Ley 14.263 art. 6 inc. g (legajo por residente) · Ley 26.529 arts. 12 a 18 (historia clínica)</div>
@@ -1492,11 +1557,12 @@ function legajoHtml(r){
   h+=sec(9,(r.rangosHist.length?'<h3>Rangos de alarma propios</h3><ul class="li">'+r.rangosHist.map(x=>`<li>${fdt(x.ts)} — ${RANGE_LBL[x.k]}: ${esc(x.antes)} → ${esc(x.despues)}. ${esc(x.motivo)} (${esc(uName(x.por))})</li>`).join('')+'</ul>':'')+`<div class="chart" style="border:0;padding:0">${chartSvg(r,'ta')}</div>`+ctlTable(r,false,0));
   h+=sec(10,byRes('evm',r.id,true).map(e=>lgEnt(e,`<b>${fdt(e.ts)}</b> — ${esc(e.texto)}${e.plan?' <b>Plan:</b> '+esc(e.plan):''}<br><span class="small">Firma: ${esc(uFull(e.por))}</span>`)).join('')||'<p class="empty">Sin evoluciones.</p>');
   h+=sec(11,byRes('eve',r.id,true).map(e=>{const tg=EVG.map(g=>e[g[0]]?g[1]+': '+esc(e[g[0]]):'').filter(Boolean).join(' · ');return lgEnt(e,`<b>${fdt(e.ts)} — turno ${esc(e.turno.toLowerCase())}</b> — ${tg}${e.texto?'. '+esc(e.texto):''}<br><span class="small">Firma: ${esc(uFull(e.por))}</span>`);}).join('')||'<p class="empty">Sin notas.</p>');
-  h+=sec(12,incList(r,true));
-  h+=sec(13,S.age.filter(x=>x.resId===r.id).sort((a,b)=>a.fecha-b.fecha).map(x=>ageItem(x,false,true)).join('')||'<p class="empty">Sin turnos.</p>');
-  h+=sec(14,mesesDisp(r).slice().reverse().map(m=>{const lst=S.rmes.filter(x=>x.resId===r.id&&x.mes===m);
+  h+=sec(12,evespList(r,true,''));
+  h+=sec(13,incList(r,true));
+  h+=sec(14,S.age.filter(x=>x.resId===r.id).sort((a,b)=>a.fecha-b.fecha).map(x=>ageItem(x,false,true)).join('')||'<p class="empty">Sin turnos.</p>');
+  h+=sec(15,mesesDisp(r).slice().reverse().map(m=>{const lst=S.rmes.filter(x=>x.resId===r.id&&x.mes===m);
     return `<h3>${mesLabel(m)}</h3>${statsHtml(r,m)}<h3>Evoluciones mensuales firmadas</h3>${lst.length?lst.map(x=>lgEnt(x,`<b>${x.tipo==='med'?'Médico':'Enfermería'}:</b> ${esc(x.texto)}<br><span class="small">Firma: ${esc(uFull(x.por))} · ${fdt(x.ts)}</span>`)).join(''):'<p class="empty">Sin evoluciones mensuales.</p>'}`;}).join(''));
-  h+=sec(15,`<p>Se deja constancia de que el presente legajo reúne, en orden cronológico, todas las actuaciones registradas para el residente desde su ingreso hasta la fecha de emisión (${fdt(now)}), incluidos los registros anulados y corregidos con su motivo. Quién escribió cada registro surge de la firma de cada asiento y del registro de auditoría del sistema.</p>
+  h+=sec(16,`<p>Se deja constancia de que el presente legajo reúne, en orden cronológico, todas las actuaciones registradas para el residente desde su ingreso hasta la fecha de emisión (${fdt(now)}), incluidos los registros anulados y corregidos con su motivo. Quién escribió cada registro surge de la firma de cada asiento y del registro de auditoría del sistema.</p>
     <div class="lg-firmas"><div>Firma y sello<br>Médico de cabecera<br>${esc(uFull('u_ferraro'))}</div><div>Firma y sello<br>Director de salud<br>Dr. Ricardo Medina — MP 99.000 (ficticio)</div><div>Firma y sello<br>Enfermería responsable</div><div>Firma<br>Familiar responsable / apoderado<br>${esc(r.familiar.n)}</div></div><div class="lg-warn">BOCETO — DATOS FICTICIOS. Sin validez legal.</div>`);
   return h+'</article>';
 }
@@ -1571,12 +1637,13 @@ function exportCSV(tipo){
 async function checkRestore(text){
   let o;try{o=JSON.parse(text);}catch(e){return {ok:false,err:'El archivo no es un respaldo válido (no se puede leer como JSON).'};}
   if(!o||o.formato!=='nuestrohogar-respaldo'||!o.datos||typeof o.datos!=='object')return {ok:false,err:'El archivo no es un respaldo de este sistema.'};
-  const d=o.datos,req=['residents','audit'].concat(COLS);
+  const d=o.datos,raw=JSON.stringify(d),req=['residents','audit'].concat(COLS);
+  if((o.version||0)<5&&!Array.isArray(d.evesp))d.evesp=[];
   for(const k of req)if(!Array.isArray(d[k]))return {ok:false,err:'Al respaldo le falta la sección "'+k+'". Está incompleto o dañado.'};
   if(!d.users||typeof d.users!=='object'||!Object.values(d.users).some(u=>u.rol==='admin'&&u.estado==='activo'))return {ok:false,err:'El respaldo no tiene un administrador activo: no se podría volver a entrar.'};
   if(!d.config)return {ok:false,err:'Al respaldo le falta la configuración.'};
   if(typeof o.hash!=='string'||o.hash.length!==64)return {ok:false,err:'El respaldo no tiene código de verificación.'};
-  const h=await sha256(JSON.stringify(d));
+  const h=await sha256(raw);
   if(h.hex!==o.hash)return {ok:false,err:'El código de verificación no coincide: el archivo fue modificado o está dañado. No se restaura.'};
   const va=verifyAudit(d.audit);
   const nReg=COLS.reduce((s,k)=>s+d[k].length,0);
@@ -1649,7 +1716,7 @@ function renderUsuarios(){
   return `<div class="wrap"><div class="card"><div class="sec-h"><h2>Usuarios</h2><button class="btn pri" onclick="formUser('')">+ Nuevo usuario</button></div>
     <p class="hint">Un usuario no se borra nunca: se da de baja, porque su nombre firma registros que deben seguir siendo legibles. Todo cambio queda en la auditoría. El PIN se ve solo porque es una demo.</p>
     <div class="tscroll"><table><thead><tr><th>Nombre</th><th>Rol</th><th>Matrícula / área</th><th>Turno</th><th>Estado</th><th>Último ingreso</th><th>PIN (demo)</th><th></th></tr></thead><tbody>${us.map(u=>{const yo=u.id===SESSION.user;
-      return `<tr><td><b>${esc(u.t+' '+u.n)}</b>${yo?' <span class="pill pri">vos</span>':''}</td><td>${esc(ROLES[u.rol])}</td><td>${esc(u.mat)}</td><td>${esc(u.turno||'—')}</td><td><span class="pill ${u.estado==='activo'?'ok':u.estado==='bloqueado'?'bad':''}">${esc(u.estado)}</span>${u.fallos?`<div class="small muted">${u.fallos} PIN incorrecto(s)</div>`:''}</td><td class="small">${u.ultimo?fdt(u.ultimo):'—'}</td><td>${esc(u.pin)}</td>
+      return `<tr><td><b>${esc(u.t+' '+u.n)}</b>${yo?' <span class="pill pri">vos</span>':''}</td><td>${esc(ROLES[u.rol])}${u.esp?'<div class="small muted">'+esc(u.esp)+'</div>':''}</td><td>${esc(u.mat)}</td><td>${esc(u.turno||'—')}</td><td><span class="pill ${u.estado==='activo'?'ok':u.estado==='bloqueado'?'bad':''}">${esc(u.estado)}</span>${u.fallos?`<div class="small muted">${u.fallos} PIN incorrecto(s)</div>`:''}</td><td class="small">${u.ultimo?fdt(u.ultimo):'—'}</td><td>${esc(u.pin)}</td>
         <td><div class="row">${u.estado!=='baja'?`<button class="btn sm" onclick="formUser('${u.id}')">Editar / PIN</button>`:''}${!yo&&u.estado==='activo'?`<button class="btn sm no" onclick="userEstado('${u.id}','bloqueado')">Bloquear</button>`:''}${!yo&&u.estado==='bloqueado'?`<button class="btn sm ok" onclick="userEstado('${u.id}','activo')">Desbloquear</button>`:''}${!yo&&u.estado!=='baja'?`<button class="btn link" onclick="userEstado('${u.id}','baja')">Dar de baja</button>`:''}${u.estado==='baja'?`<button class="btn sm" onclick="userEstado('${u.id}','activo')">Reactivar</button>`:''}</div></td></tr>`;}).join('')}</tbody></table></div></div></div>`;
 }
 function adminsActivos(){return Object.values(S.users).filter(u=>u.rol==='admin'&&u.estado==='activo').length;}
@@ -1665,14 +1732,16 @@ function formUser(id){
   if(!can('usuarios'))return deny('administrar usuarios');const u=id?S.users[id]:{t:'Enf.',n:'',rol:'enf',mat:'',turno:'',pin:''};const yo=id===SESSION.user;
   modal(id?'Editar usuario':'Nuevo usuario',`<div class="fgrid"><label class="fl">Título<select name="t">${['Enf.','Dra.','Dr.','Sra.','Sr.','Lic.'].map(x=>`<option${u.t===x?' selected':''}>${x}</option>`).join('')}</select></label><label class="fl">Nombre y apellido<input name="n" value="${esc(u.n)}" required></label>
     <label class="fl">Rol<select name="rol" ${yo?'disabled':''}>${Object.keys(ROLES).map(k=>`<option value="${k}"${u.rol===k?' selected':''}>${ROLES[k]}</option>`).join('')}</select></label><label class="fl">Matrícula / área<input name="mat" value="${esc(u.mat)}"></label>
+    <label class="fl">Especialidad (solo especialistas)<select name="esp"><option value="">—</option>${ESPECIALIDADES.map(x=>`<option${u.esp===x?' selected':''}>${x}</option>`).join('')}</select></label>
     <label class="fl">Turno<select name="turno">${['','Mañana','Tarde','Noche','Franquero'].map(x=>`<option value="${x}"${u.turno===x?' selected':''}>${x||'—'}</option>`).join('')}</select></label><label class="fl">PIN (4 a 6 números)${id?' — dejar vacío para no cambiarlo':''}<input name="pin" inputmode="numeric" maxlength="6" autocomplete="off"></label></div>
     ${yo?'<p class="small muted">No podés cambiar tu propio rol.</p>':''}<p class="small muted">En el sistema real: contraseña segura y matrícula verificada antes de habilitar a un profesional.</p>`,id?'Guardar':'Crear usuario',fd=>{
     const n=String(fd.get('n')||'').trim(),pin=String(fd.get('pin')||'').trim(),r=yo?u.rol:fd.get('rol');
     if(n.length<3)return 'Poné el nombre.';if((!id||pin)&&!/^\d{4,6}$/.test(pin))return 'El PIN tiene que tener de 4 a 6 números.';
+    const espv=r==='esp'?String(fd.get('esp')||''):'';if(r==='esp'&&!ESPECIALIDADES.includes(espv))return 'Elegí la especialidad.';
     if(id&&u.rol==='admin'&&r!=='admin'&&adminsActivos()<=1)return 'Tiene que quedar al menos un administrador activo.';
-    if(!id){const nid=uid('u_');S.users[nid]={id:nid,t:fd.get('t'),n,rol:r,mat:String(fd.get('mat')||'').trim(),turno:fd.get('turno'),pin,estado:'activo',fallos:0,ultimo:null,alta:Date.now()};audit('Alta de usuario','',uFull(nid)+' — rol '+ROLES[r]);}
-    else{const ch=[];if(u.t!==fd.get('t')||u.n!==n)ch.push('nombre');if(u.rol!==r)ch.push('rol '+ROLES[u.rol]+' → '+ROLES[r]);if(u.mat!==String(fd.get('mat')||'').trim())ch.push('matrícula');if(u.turno!==fd.get('turno'))ch.push('turno');if(pin&&pin!==u.pin)ch.push('PIN cambiado');
-      if(!ch.length)return 'No cambiaste nada.';u.t=fd.get('t');u.n=n;u.rol=r;u.mat=String(fd.get('mat')||'').trim();u.turno=fd.get('turno');if(pin)u.pin=pin;audit('Cambio de usuario','',uFull(id)+': '+ch.join(', '));}
+    if(!id){const nid=uid('u_');S.users[nid]={id:nid,t:fd.get('t'),n,rol:r,mat:String(fd.get('mat')||'').trim(),turno:fd.get('turno'),pin,estado:'activo',fallos:0,ultimo:null,alta:Date.now()};if(espv)S.users[nid].esp=espv;audit('Alta de usuario','',uFull(nid)+' — rol '+ROLES[r]);}
+    else{const ch=[];if(u.t!==fd.get('t')||u.n!==n)ch.push('nombre');if(u.rol!==r)ch.push('rol '+ROLES[u.rol]+' → '+ROLES[r]);if(u.mat!==String(fd.get('mat')||'').trim())ch.push('matrícula');if(u.turno!==fd.get('turno'))ch.push('turno');if((u.esp||'')!==espv)ch.push('especialidad');if(pin&&pin!==u.pin)ch.push('PIN cambiado');
+      if(!ch.length)return 'No cambiaste nada.';u.t=fd.get('t');u.n=n;u.rol=r;u.mat=String(fd.get('mat')||'').trim();u.turno=fd.get('turno');if(espv)u.esp=espv;else delete u.esp;if(pin)u.pin=pin;audit('Cambio de usuario','',uFull(id)+': '+ch.join(', '));}
     save();render();toast('Usuario guardado');return true;});
 }
 function renderPermisos(){
@@ -1722,7 +1791,7 @@ function onDraftInput(vals){
 }
 function draftDelete(key){const all=drLoad();if(all[key]){delete all[key];drSave(all);}}
 function draftDiscard(key,how){const all=drLoad(),d=all[key];if(!d||!SESSION||d.user!==SESSION.user)return false;delete all[key];drSave(all);audit('Borrador descartado',d.resId,d.titulo+(how?' ('+how+')':''));save();return true;}
-function formFn(n){return ({formCtl,formEvm,formEve,formInc,formEsc,formInd,suspInd,noDado,darDosis,darSOS,formAx,formDatos,formEgreso,formIngreso,formDoc,formRangos,formAge,cerrarTurno,formNov,formRmes,anular})[n];}
+function formFn(n){return ({formCtl,formEvm,formEve,formInc,formEsc,formInd,suspInd,noDado,darDosis,darSOS,formAx,formDatos,formEgreso,formIngreso,formDoc,formRangos,formAge,cerrarTurno,formNov,formRmes,anular,formEsp})[n];}
 function abrirBorrador(key){
   const d=drLoad()[key];if(!d||!SESSION||d.user!==SESSION.user){toast('Borrador no disponible.');return;}
   if(d.resId&&getRes(d.resId)&&d.tab)go('res',d.resId,d.tab);else if(d.fn==='formNov')go('guardia');
@@ -1740,14 +1809,14 @@ const DRAFT_INFO={
   formEgreso:a=>({resId:a[0],tab:'datos',titulo:'Egreso'}),formIngreso:()=>({resId:'',tab:'',titulo:'Nuevo ingreso'}),
   formDoc:a=>({resId:a[0],tab:'docs',titulo:'Documentación: '+DOC_ITEMS[a[1]]}),formRangos:a=>({resId:a[0],tab:'ctl',titulo:'Rangos de alarma'}),
   formAge:a=>({resId:a[0]||'',tab:a[0]?'age':'',titulo:'Turno de agenda'}),cerrarTurno:a=>({resId:(find('age',a[0])||{}).resId,tab:'age',titulo:'Cierre de turno'}),
-  formNov:a=>({resId:a[0]||'',tab:'',titulo:'Novedad de guardia'}),formRmes:a=>({resId:a[0],tab:'mes',titulo:'Evolución mensual'}),
+  formNov:a=>({resId:a[0]||'',tab:'',titulo:'Novedad de guardia'}),formEsp:a=>({resId:a[0],tab:'evesp',titulo:'Evolución de especialista'}),formRmes:a=>({resId:a[0],tab:'mes',titulo:'Evolución mensual'}),
   anular:a=>({resId:(find(a[0],a[1])||{}).resId,tab:'',titulo:'Anulación de '+COL_LBL[a[0]]})
 };
 function wrapDraft(name,f){return function(...a){NEXT_DRAFT=Object.assign({fn:name,args:a.map(x=>x===undefined?null:x)},DRAFT_INFO[name](a));try{return f.apply(this,a);}finally{NEXT_DRAFT=null;}};}
 formCtl=wrapDraft('formCtl',formCtl);formEvm=wrapDraft('formEvm',formEvm);formEve=wrapDraft('formEve',formEve);formInc=wrapDraft('formInc',formInc);formEsc=wrapDraft('formEsc',formEsc);
 formInd=wrapDraft('formInd',formInd);suspInd=wrapDraft('suspInd',suspInd);noDado=wrapDraft('noDado',noDado);darDosis=wrapDraft('darDosis',darDosis);darSOS=wrapDraft('darSOS',darSOS);
 formAx=wrapDraft('formAx',formAx);formDatos=wrapDraft('formDatos',formDatos);formEgreso=wrapDraft('formEgreso',formEgreso);formIngreso=wrapDraft('formIngreso',formIngreso);formDoc=wrapDraft('formDoc',formDoc);
-formRangos=wrapDraft('formRangos',formRangos);formAge=wrapDraft('formAge',formAge);cerrarTurno=wrapDraft('cerrarTurno',cerrarTurno);formNov=wrapDraft('formNov',formNov);formRmes=wrapDraft('formRmes',formRmes);anular=wrapDraft('anular',anular);
+formRangos=wrapDraft('formRangos',formRangos);formAge=wrapDraft('formAge',formAge);cerrarTurno=wrapDraft('cerrarTurno',cerrarTurno);formNov=wrapDraft('formNov',formNov);formRmes=wrapDraft('formRmes',formRmes);anular=wrapDraft('anular',anular);formEsp=wrapDraft('formEsp',formEsp);
 function draftsBanner(){const l=SESSION?draftsOf(SESSION.user):[];if(!l.length)return '';
   return `<div class="status warn" style="display:block"><b>Tenés ${l.length} borrador${l.length>1?'es':''} sin guardar.</b> No son parte de la historia clínica hasta que los guardes.<ul class="li">${l.map(d=>{const r=getRes(d.resId);return `<li>${esc(d.titulo)}${r?' — '+esc(r.ap+', '+r.no):''} <span class="small">(${fdt(d.ts)})</span> <button class="btn sm" onclick="abrirBorrador('${esc(d.key)}')">Abrir</button> <button class="btn link" onclick="if(draftDiscard('${esc(d.key)}','desde el aviso')){render();toast('Borrador descartado');}">Descartar</button></li>`;}).join('')}</ul></div>`;}
 
