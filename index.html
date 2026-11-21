@@ -205,7 +205,7 @@ tr.anul td.anl{text-decoration:none}
 .svc b{font-size:1.2rem;color:var(--pri-text)}
 .svc span{font-size:.85rem;color:var(--ink2)}
 .svc small{color:var(--muted);font-size:.78rem;margin-top:auto}
-@media(max-width:380px){.svcs{grid-template-columns:1fr}}
+@media(max-width:600px){.svcs{gap:8px}.svc{min-height:0;padding:10px 12px;gap:2px}.svc b{font-size:1rem}.svc span{display:none}.svc small{margin-top:2px;font-size:.72rem}}
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:10px auto}
 .keypad button{min-height:58px;font-size:1.3rem;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
 .keypad button:hover{background:var(--pri-soft)}
@@ -834,12 +834,14 @@ function render(){
   const u=me();
   $('#usr').innerHTML=`<div class="who"><b>${esc(u.t+' '+u.n)}</b><small>${esc(ROLES[u.rol])}${u.esp?' · '+esc(u.esp):''} · se cierra sola a los ${S.config.sesionMin} min sin uso</small></div><button class="btn sm on-pri" onclick="logout(false)">Cerrar sesión</button>`;
   const nl=novSinLeer().length,bk=backupVencido();
+  const sx=(q=>{const e=document.querySelector(q);return e?e.scrollLeft:0;}),navX=sx('#nav .nav-in'),tabsX=sx('#app .tabs');
   $('#nav').innerHTML='<div class="nav-in">'+Object.keys(PAGES).filter(pageOk).map(k=>{
     const on=(VW.page===k)||(k==='home'&&VW.page==='res');let b='';
     if(k==='guardia'&&nl)b=` <span class="badge">${nl}</span>`;if(k==='respaldo'&&bk&&can('restaurar'))b=' <span class="badge">!</span>';
     return `<a href="#/${k==='home'?'':k}" class="${on?'on':''}">${PAGES[k][0]}${b}</a>`;}).join('')+'</div>';
   const R={home:renderHome,res:renderRes,guardia:renderGuardia,agenda:renderAgenda,contingencia:renderCont,corte:renderCorte,respaldo:renderRespaldo,auditoria:renderAuditoria,usuarios:renderUsuarios,permisos:renderPermisos,config:renderConfig};
   $('#app').innerHTML=(R[VW.page]||renderHome)();
+  [['#nav .nav-in',navX,'a.on'],['#app .tabs',tabsX,'.on']].forEach(([q,x,act])=>{const e=document.querySelector(q);if(!e)return;e.scrollLeft=x;const a=e.querySelector(act);if(a){const er=e.getBoundingClientRect(),ar=a.getBoundingClientRect();if(ar.left<er.left)e.scrollLeft-=er.left-ar.left+12;else if(ar.right>er.right)e.scrollLeft+=ar.right-er.right+12;}});
   if(VW.page==='res'&&VW.tab==='legajo')setPageStyle('Legajo de '+getRes(VW.resId).ap+', '+getRes(VW.resId).no+' — DNI '+getRes(VW.resId).dni);
   if(VW.page==='contingencia')setPageStyle('Planilla de contingencia — '+fdKey(UI.cgDia||dayKey(Date.now())));
 }
@@ -1425,7 +1427,7 @@ function cerrarTurno(id){
 }
 
 /* ---------- pase de guardia ---------- */
-function novSinLeer(){if(!SESSION||!can('ver_clinica'))return [];const lim0=Date.now()-36*HOUR;return S.nov.filter(n=>valid(n)&&n.ts>=lim0&&n.por!==SESSION.user&&!(n.lecturas||[]).some(l=>l.por===SESSION.user));}
+function novSinLeer(){if(!SESSION||!can('ver_clinica'))return [];const lim0=Date.now()-36*HOUR;return S.nov.filter(n=>valid(n)&&n.ts>=lim0&&n.por!==SESSION.user&&!(n.lecturas||[]).some(l=>l.por===SESSION.user&&!l.anul));}
 function renderGuardia(){
   const now=Date.now(),desde=now-12*HOUR;
   const act=S.residents.filter(r=>r.estado==='activo');
@@ -1445,13 +1447,20 @@ function renderGuardia(){
     <h3 class="sub">Novedades escritas (últimas 48 h)</h3>${nov.map(n=>novCard(n)).join('')||'<p class="empty">Sin novedades.</p>'}</div></div>`;
 }
 function novCard(n){
-  const r=n.resId&&getRes(n.resId),leido=(n.lecturas||[]).some(l=>l.por===SESSION.user);
+  const r=n.resId&&getRes(n.resId),leido=(n.lecturas||[]).some(l=>l.por===SESSION.user&&!l.anul);
   return `<div class="rec ${recCls(n)}" ${n.importante&&valid(n)?'style="border-left:5px solid var(--bad)"':''}><div class="top2"><b>${fd(n.ts)} — turno ${esc(n.turno.toLowerCase())}${n.importante?' — <span style="color:var(--bad)">IMPORTANTE</span>':''}</b>${firma(n.por,n.ts)}</div>
     <div class="body" style="margin-top:6px">${r?`<a href="#/r/${r.id}/datos">${esc(r.ap+', '+r.no)}</a>: `:''}${esc(n.texto)}</div>
-    <div class="small muted" style="margin-top:6px">Leído por: ${(n.lecturas||[]).length?(n.lecturas.map(l=>esc(uName(l.por))+' '+ft(l.ts)).join(' · ')):'nadie todavía'}</div>${recNotes('nov',n)}
+    <div class="small muted" style="margin-top:6px">Leído por: ${(n.lecturas||[]).length?(n.lecturas.map((l,i)=>l.anul?`<s>${esc(uName(l.por))} ${ft(l.ts)}</s> <span style="color:var(--bad)">(anulada por error ${ft(l.anul.fecha)})</span>`:esc(uName(l.por))+' '+ft(l.ts)+(l.por===SESSION.user&&valid(n)?` <button class="btn sm" onclick="anularLectura('${n.id}',${i})">Anular por error</button>`:'')).join(' · ')):'nadie todavía'}</div>${recNotes('nov',n)}
     <div class="acts">${valid(n)&&!leido&&n.por!==SESSION.user?`<button class="btn sm ok" onclick="leerNov('${n.id}')">Tomé conocimiento</button>`:''}${recActs('nov',n).replace('<div class="acts no-print">','').replace(/<\/div>$/,'')}</div></div>`;
 }
-function leerNov(id){const n=find('nov',id);if(!n||!can('ver_clinica'))return;n.lecturas=n.lecturas||[];if(n.lecturas.some(l=>l.por===SESSION.user))return;n.lecturas.push({por:SESSION.user,ts:Date.now()});audit('Lectura de novedad de guardia',n.resId,'');save();render();toast('Registrado: tomaste conocimiento');}
+function leerNov(id){const n=find('nov',id);if(!n||!can('ver_clinica'))return;n.lecturas=n.lecturas||[];if(n.lecturas.some(l=>l.por===SESSION.user&&!l.anul))return;n.lecturas.push({por:SESSION.user,ts:Date.now()});audit('Lectura de novedad de guardia',n.resId,'');save();render();toast('Registrado: tomaste conocimiento');}
+function anularLectura(id,i){
+  const n=find('nov',id),l=n&&(n.lecturas||[])[i];if(!l||l.anul)return;
+  if(l.por!==SESSION.user){deny('anular la lectura de otra persona');return;}
+  modal('Anular lectura por error',`<p class="hint">Tu "Tomé conocimiento" de las ${ft(l.ts)} <b>no se borra</b>: queda tachado con la leyenda "anulada por error" y registrado en la auditoría. Después vas a poder volver a tocar "Tomé conocimiento" cuando la leas.</p><label class="fl">Tu PIN, para confirmar<input name="pin" type="password" inputmode="numeric" autocomplete="off" required></label><p class="small muted">Anula: ${esc(uFull(SESSION.user))} · ${fdt(Date.now())}</p>`,'Anular lectura',fd=>{
+    const u=me();if(String(fd.get('pin')||'').trim()!==u.pin){audit('PIN incorrecto al anular lectura',n.resId,'');save();return 'PIN incorrecto.';}
+    l.anul={fecha:Date.now(),por:SESSION.user,motivo:'Tocado por error'};audit('Anulación de lectura de novedad (por error)',n.resId,'Lectura de las '+ft(l.ts));save();render();toast('Lectura anulada. Podés volver a tomar conocimiento.');return true;});
+}
 function formNov(rid,corrId){
   if(!can('guardia'))return deny('escribir novedades de guardia');const o=corrId?find('nov',corrId):{resId:rid||'',texto:'',importante:false};
   const act=S.residents.filter(r=>r.estado==='activo');
