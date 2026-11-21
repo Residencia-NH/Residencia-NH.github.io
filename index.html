@@ -266,6 +266,7 @@ footer{max-width:1240px;margin:20px auto 30px;padding:0 16px;color:var(--muted);
   .lg-sec{break-before:page}
   .cg-turno+.cg-turno{break-before:page}
   .only-print{display:block!important}
+  body.pb>*:not(#pbZone){display:none!important}
   .lg-cover{min-height:240mm}
   table{font-size:8.5pt}
   th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -832,6 +833,7 @@ window.addEventListener('hashchange',route);
    RENDER GENERAL
    ========================================================= */
 function render(){
+  finBlanco();
   $('#estNombre').textContent=S.config.nombre;
   $('#pageStyle').textContent='';
   $('#seedNote').textContent='Datos ficticios generados el '+fdKey(S.seedDay)+' · se guardan solo en este navegador';
@@ -1540,7 +1542,7 @@ function tabLegajo(r){
   return `<div class="no-print card"><div class="sec-h"><h2>Legajo del residente</h2><button class="btn pri" onclick="imprimir('legajo','${r.id}')">Imprimir / guardar PDF</button></div>
     <p class="hint" style="margin-bottom:0">Reúne todas las secciones en orden. Al imprimir, cada hoja lleva "Folio N de M" y el nombre del residente al pie. Para PDF: elegir "Guardar como PDF" en la ventana de impresión. Lo anulado y lo corregido aparecen tachados: también es parte de la historia clínica.</p></div>${legajoHtml(r)}`;
 }
-function imprimir(que,rid){audit(que==='legajo'?'Impresión / PDF de legajo':'Impresión de planilla de contingencia',rid||'',que==='contingencia'?'Turno '+(UI.cgTurno||turnoDe(Date.now()))+' '+fdKey(UI.cgDia||dayKey(Date.now())):'');save();try{window.print();}catch(e){}}
+function imprimir(que,rid){finBlanco();audit(que==='legajo'?'Impresión / PDF de legajo':'Impresión de planilla de contingencia',rid||'',que==='contingencia'?'Turno '+(UI.cgTurno||turnoDe(Date.now()))+' '+fdKey(UI.cgDia||dayKey(Date.now())):'');save();try{window.print();}catch(e){}}
 function lgEnt(x,inner){return `<div class="lg-ent ${recCls(x)}"><div class="tx">${inner}</div>${x.papel?`<div class="small">Cargado desde papel el ${fdt(x.tc)}.</div>`:''}${x.corr?`<div class="small">Corregido por su autor el ${fdt(x.corr.fecha)}.</div>`:''}${x.anul?`<div class="small" style="color:#C62828">ANULADO el ${fdt(x.anul.fecha)} por ${esc(uFull(x.anul.por))}. Motivo: ${esc(x.anul.motivo)}</div>`:''}</div>`;}
 function legajoHtml(r){
   const now=Date.now();
@@ -1585,8 +1587,11 @@ function legajoHtml(r){
 function renderCont(){
   const now=Date.now(),dk=UI.cgDia||dayKey(now),tSel=UI.cgTurno||turnoDe(now);
   const turnos=tSel==='Todos'?['Mañana','Tarde','Noche']:[tSel];
-  const act=S.residents.filter(r=>r.estado==='activo').sort((a,b)=>a.hab.localeCompare(b.hab,'es',{numeric:true}));
-  let h=`<div class="wrap"><div class="card no-print"><div class="sec-h"><h2>Planilla de contingencia</h2><button class="btn pri" onclick="imprimir('contingencia')">Imprimir</button></div>
+  const todos=S.residents.filter(r=>r.estado==='activo').sort((a,b)=>a.hab.localeCompare(b.hab,'es',{numeric:true}));
+  if(UI.cgRes&&!todos.some(r=>r.id===UI.cgRes))UI.cgRes=null;
+  const act=UI.cgRes?todos.filter(r=>r.id===UI.cgRes):todos;
+  let h=`<div class="wrap"><div class="card no-print"><div class="sec-h"><h2>Planilla de contingencia</h2><div class="row"><button class="btn pri" onclick="imprimir('contingencia')">Imprimir</button><button class="btn" onclick="imprimirBlanco()">Planilla en blanco</button></div></div>
+    <label class="fl">Planilla por paciente<select onchange="UI.cgRes=this.value||null;render()"><option value="">Todos los residentes</option>${todos.map(r=>`<option value="${r.id}" ${UI.cgRes===r.id?'selected':''}>${esc(r.ap+', '+r.no)} — ${esc(r.hab)}</option>`).join('')}</select></label>
     <p class="hint">Para imprimir <b>todos los días</b> al empezar la mañana y tener en la carpeta de enfermería. Si se corta la luz o se cae el sistema, se anota a mano acá; al volver, se carga marcando "Cargado desde papel". <a href="#/corte">Ver el procedimiento</a>.</p>
     <div class="row"><label class="fl" style="margin:0">Día<input type="date" value="${dk}" onchange="UI.cgDia=this.value||null;render()"></label>
     <div class="seg">${['Mañana','Tarde','Noche','Todos'].map(t=>`<button class="${tSel===t?'on':''}" onclick="UI.cgTurno='${t}';render()">${t==='Todos'?'Los 3 turnos':t}</button>`).join('')}</div></div></div>`;
@@ -1624,9 +1629,12 @@ function planillaBlanco(){
   </div>
   <p class="small">Anotar siempre la <b>hora real</b> y firmar. Al volver el sistema, cargar todo marcando "Cargado desde papel" y archivar esta hoja en el legajo del residente.</p></div>`;
 }
-function imprimirBlanco(){audit('Descarga de planilla en blanco','','');save();setPageStyle('Planilla en blanco — contingencia');try{window.print();}catch(e){}}
+function imprimirBlanco(){audit('Descarga de planilla en blanco','','');save();setPageStyle('Planilla en blanco — contingencia');
+  let z=document.getElementById('pbZone');if(!z){z=document.createElement('div');z.id='pbZone';document.body.appendChild(z);}
+  z.innerHTML=planillaBlanco();document.body.classList.add('pb');try{window.print();}catch(e){}}
+function finBlanco(){document.body.classList.remove('pb');const z=document.getElementById('pbZone');if(z)z.innerHTML='';}
 function renderCorte(){
-  return `<div class="wrap"><div class="card no-print"><h2>Planilla en blanco para escribir a mano</h2><p class="hint">Las mismas secciones y columnas del sistema (datos, alergias, medicación, controles, evolución y novedades), para completar a mano alzada. <b>Hay que tenerla impresa antes</b>: durante el corte no se puede descargar. Para el día a día está la <a href="#/contingencia">planilla precargada</a>; esta es la reserva (residente nuevo, o si la precargada no se llegó a imprimir).</p><button class="btn pri" onclick="imprimirBlanco()">Descargar planilla en blanco</button><p class="small muted" style="margin-top:6px">Se abre la ventana de impresión: elegí la impresora, o "Guardar como PDF" para descargarla. Imprimí las copias necesarias (una por residente y por turno).</p></div>${planillaBlanco()}<div class="card no-print"><h2>Si se corta la luz o se cae el sistema</h2><p class="hint">Procedimiento de 4 pasos. Lo importante es que <b>nunca falte la información para atender</b> y que después todo quede cargado con la hora real.</p>
+  return `<div class="wrap"><div class="card no-print"><h2>Planilla en blanco para escribir a mano</h2><p class="hint">Las mismas secciones y columnas del sistema (datos, alergias, medicación, controles, evolución y novedades), para completar a mano alzada. <b>Hay que tenerla impresa antes</b>: durante el corte no se puede descargar. Para el día a día está la <a href="#/contingencia">planilla precargada</a>; esta es la reserva (residente nuevo, o si la precargada no se llegó a imprimir).</p><button class="btn pri" onclick="imprimirBlanco()">Descargar planilla en blanco</button><p class="small muted" style="margin-top:6px">Se abre la ventana de impresión: elegí la impresora, o "Guardar como PDF" para descargarla. Imprimí las copias necesarias (una por residente y por turno).</p></div><div class="card no-print"><h2>Si se corta la luz o se cae el sistema</h2><p class="hint">Procedimiento de 4 pasos. Lo importante es que <b>nunca falte la información para atender</b> y que después todo quede cargado con la hora real.</p>
   <ol class="steps">
    <li><b>Antes, todos los días.</b> Al empezar el turno mañana, enfermería imprime la <a href="#/contingencia">planilla de contingencia</a> de los 3 turnos y la deja en la carpeta del office. El administrador descarga un <a href="#/respaldo">respaldo completo</a> y lo guarda en dos lugares (pendrive y nube). El sistema le avisa si pasaron más de ${S.config.backupHoras} h.</li>
    <li><b>Durante el corte.</b> Se trabaja con la planilla en papel: tiene alergias, indicaciones vigentes y horarios. Se anota cada dosis y control <b>con la hora real y firma</b>. Si la duda es una indicación, vale la impresa del día; ante algo nuevo, se llama a la médica.</li>
