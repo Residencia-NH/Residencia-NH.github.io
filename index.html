@@ -222,6 +222,8 @@ tr.anul td.anl{text-decoration:none}
 .cg-res table td.blank{height:26px}
 .box{display:inline-block;width:15px;height:15px;border:1.5px solid var(--ink);vertical-align:middle;margin:0 3px 0 6px}
 .lines{border-bottom:1px solid #bbb;height:24px}
+.only-print{display:none}
+.fill{display:inline-block;border-bottom:1px solid #888;min-width:120px;height:1.1em;vertical-align:bottom}
 .steps{counter-reset:s;list-style:none;padding:0;margin:0}
 .steps li{position:relative;padding:14px 14px 14px 62px;background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
 .steps li::before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:14px;width:34px;height:34px;border-radius:50%;background:var(--pri);color:#fff;display:grid;place-items:center;font-weight:800}
@@ -263,6 +265,7 @@ footer{max-width:1240px;margin:20px auto 30px;padding:0 16px;color:var(--muted);
   .legajo,.cg{border:0;padding:0;max-width:none;font-size:10pt}
   .lg-sec{break-before:page}
   .cg-turno+.cg-turno{break-before:page}
+  .only-print{display:block!important}
   .lg-cover{min-height:240mm}
   table{font-size:8.5pt}
   th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -1605,8 +1608,25 @@ function renderCont(){
     h+='</div>';});
   return h+'</div>';
 }
+function planillaBlanco(){
+  const rows=(n,c)=>('<tr>'+'<td class="blank"></td>'.repeat(c)+'</tr>').repeat(n);
+  return `<div class="cg only-print"><div class="cg-h"><div><b style="font-family:Georgia,serif;text-transform:uppercase;letter-spacing:.06em">${esc(S.config.nombre)}</b> — PLANILLA EN BLANCO (CONTINGENCIA)<br>Día <span class="fill" style="min-width:90px"></span> · Turno <span class="box"></span>Mañana <span class="box"></span>Tarde <span class="box"></span>Noche</div><div class="small">Para usar si se corta la luz o se cae el sistema.<br>Una hoja por residente y por turno.</div></div>
+  <div class="cg-res">
+    <div style="margin-bottom:6px">Residente: <span class="fill" style="min-width:220px"></span> Hab.: <span class="fill" style="min-width:50px"></span> DNI: <span class="fill" style="min-width:100px"></span></div>
+    <div style="margin-bottom:8px">Obra social: <span class="fill" style="min-width:140px"></span> <b style="color:#C62828">ALERGIAS:</b> <span class="fill" style="min-width:200px"></span></div>
+    <div class="small"><b>MEDICACIÓN</b> — Marcar <span class="box"></span> D = dado · <span class="box"></span> N = no dado (escribir motivo).</div>
+    <table><thead><tr><th>Hora</th><th style="width:34%">Medicación y dosis</th><th>D / N</th><th>Hora real</th><th>Motivo si no se dio</th><th>Firma</th></tr></thead><tbody>${rows(8,6)}</tbody></table>
+    <div class="small" style="margin-top:8px"><b>CONTROLES DE SIGNOS VITALES</b></div>
+    <table><thead><tr><th>Hora</th><th>TA</th><th>FC</th><th>T°</th><th>SatO₂</th><th>FR</th><th>Glucemia</th><th>Dolor</th><th>Diuresis</th><th>Firma</th></tr></thead><tbody>${rows(4,10)}</tbody></table>
+    <div class="small" style="margin-top:8px"><b>EVOLUCIÓN DE ENFERMERÍA</b></div><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+    <div class="small" style="margin-top:8px"><b>NOVEDADES PARA EL PASE DE GUARDIA</b> <span class="box"></span> Importante</div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+    <div style="margin-top:12px">Firma y aclaración: <span class="fill" style="min-width:220px"></span> Matrícula: <span class="fill" style="min-width:80px"></span></div>
+  </div>
+  <p class="small">Anotar siempre la <b>hora real</b> y firmar. Al volver el sistema, cargar todo marcando "Cargado desde papel" y archivar esta hoja en el legajo del residente.</p></div>`;
+}
+function imprimirBlanco(){audit('Descarga de planilla en blanco','','');save();setPageStyle('Planilla en blanco — contingencia');try{window.print();}catch(e){}}
 function renderCorte(){
-  return `<div class="wrap"><div class="card"><h2>Si se corta la luz o se cae el sistema</h2><p class="hint">Procedimiento de 4 pasos. Lo importante es que <b>nunca falte la información para atender</b> y que después todo quede cargado con la hora real.</p>
+  return `<div class="wrap"><div class="card no-print"><h2>Planilla en blanco para escribir a mano</h2><p class="hint">Las mismas secciones y columnas del sistema (datos, alergias, medicación, controles, evolución y novedades), para completar a mano alzada. <b>Hay que tenerla impresa antes</b>: durante el corte no se puede descargar. Para el día a día está la <a href="#/contingencia">planilla precargada</a>; esta es la reserva (residente nuevo, o si la precargada no se llegó a imprimir).</p><button class="btn pri" onclick="imprimirBlanco()">Descargar planilla en blanco</button><p class="small muted" style="margin-top:6px">Se abre la ventana de impresión: elegí la impresora, o "Guardar como PDF" para descargarla. Imprimí las copias necesarias (una por residente y por turno).</p></div>${planillaBlanco()}<div class="card no-print"><h2>Si se corta la luz o se cae el sistema</h2><p class="hint">Procedimiento de 4 pasos. Lo importante es que <b>nunca falte la información para atender</b> y que después todo quede cargado con la hora real.</p>
   <ol class="steps">
    <li><b>Antes, todos los días.</b> Al empezar el turno mañana, enfermería imprime la <a href="#/contingencia">planilla de contingencia</a> de los 3 turnos y la deja en la carpeta del office. El administrador descarga un <a href="#/respaldo">respaldo completo</a> y lo guarda en dos lugares (pendrive y nube). El sistema le avisa si pasaron más de ${S.config.backupHoras} h.</li>
    <li><b>Durante el corte.</b> Se trabaja con la planilla en papel: tiene alergias, indicaciones vigentes y horarios. Se anota cada dosis y control <b>con la hora real y firma</b>. Si la duda es una indicación, vale la impresa del día; ante algo nuevo, se llama a la médica.</li>
