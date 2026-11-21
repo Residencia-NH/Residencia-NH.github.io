@@ -205,6 +205,7 @@ tr.anul td.anl{text-decoration:none}
 .svc b{font-size:1.2rem;color:var(--pri-text)}
 .svc span{font-size:.85rem;color:var(--ink2)}
 .svc small{color:var(--muted);font-size:.78rem;margin-top:auto}
+@media(max-width:600px){.nav-in{flex-direction:column;overflow-x:visible;gap:2px;padding:6px 10px}.nav a{min-height:40px;padding:6px 12px;border-left:4px solid transparent}.nav a.on{border-left-color:var(--pri)}.nav a.on::before{content:"▶ ";font-size:.7rem}}
 @media(max-width:600px){.svcs{gap:8px}.svc{min-height:0;padding:10px 12px;gap:2px}.svc b{font-size:1rem}.svc span{display:none}.svc small{margin-top:2px;font-size:.72rem}}
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:10px auto}
 .keypad button{min-height:58px;font-size:1.3rem;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
