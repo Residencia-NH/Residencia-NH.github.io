@@ -208,6 +208,16 @@ tr.anul td.anl{text-decoration:none}
 .svc small{color:var(--muted);font-size:.78rem;margin-top:auto}
 @media(max-width:600px){.nav-in{flex-direction:column;overflow-x:visible;gap:2px;padding:6px 10px}.nav a{min-height:40px;padding:6px 12px;border-left:4px solid transparent}.nav a.on{border-left-color:var(--pri)}.nav a.on::before{content:"▶ ";font-size:.7rem}}
 @media(max-width:600px){.svcs{gap:8px}.svc{min-height:0;padding:10px 12px;gap:2px}.svc b{font-size:1rem}.svc span{display:none}.svc small{margin-top:2px;font-size:.72rem}}
+/* visitas */
+.vcta{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:var(--pri-soft);border-color:var(--pri-hover)}
+.vbtn{min-height:56px;font-size:1.1rem;padding:10px 22px}
+.vdni{font-size:1.8rem;letter-spacing:.12em;text-align:center;min-height:60px!important}
+.vstep{font-size:.85rem;color:var(--muted);font-weight:600}
+.vlist{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
+@media(min-width:600px){.vlist{grid-template-columns:1fr 1fr}}
+.vlist .ucard{min-height:58px;font-size:1.05rem}
+.vok{text-align:center;padding:28px 16px}
+.vok .vcheck{width:72px;height:72px;border-radius:50%;background:var(--ok);color:#fff;font-size:2.4rem;display:grid;place-items:center;margin:0 auto 10px}
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:10px auto}
 .keypad button{min-height:58px;font-size:1.3rem;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
 .keypad button:hover{background:var(--pri-soft)}
@@ -306,7 +316,8 @@ footer{max-width:1240px;margin:20px auto 30px;padding:0 16px;color:var(--muted);
    BOCETO v2 — Residencia "Nuestro Hogar"
    Todo dato de este archivo es inventado.
    ========================================================= */
-const VER = 5;
+const VER = 6;
+const EVM_DIAS = 15; /* evolución médica quincenal (pedido de la residencia, 25/11/2026) */
 const KEY = 'nh_boceto_hc';
 const DAY = 864e5, MIN = 6e4, HOUR = 36e5;
 const CORR_MIN = 15;
@@ -322,18 +333,20 @@ const PERM = [
   ['ver_agenda','Ver la agenda de turnos y estudios',['enf','med','esp','adm']],
   ['controles','Cargar controles de signos vitales',['enf']],
   ['medicacion','Registrar administración de medicación (dado / no dado)',['enf']],
-  ['evol_enf','Evolución de enfermería por turno y mensual',['enf']],
+  ['evol_enf','Evolución de enfermería por turno (06 a 18 h y 18 a 06 h) y mensual',['enf']],
   ['guardia','Escribir novedades del pase de guardia',['enf','med','esp']],
   ['incidentes','Registrar caídas e incidentes',['enf','med','esp']],
   ['escalas','Registrar escalas geriátricas (especialistas: las de su disciplina)',['enf','med','esp']],
   ['evol_esp','Evolución de especialistas (cada uno en su especialidad)',['esp']],
   ['indicaciones','Indicar, modificar y suspender indicaciones médicas',['med']],
-  ['evol_med','Evolución médica semanal y mensual',['med']],
+  ['evol_med','Evolución médica quincenal y mensual',['med']],
   ['antecedentes','Agregar antecedentes, alergias, medicación habitual y exámenes',['med']],
   ['rangos','Definir rangos de alarma por residente',['med']],
   ['agenda','Agendar y cerrar turnos médicos y estudios',['med','adm']],
   ['legajo','Ver e imprimir el legajo completo',['enf','med','esp']],
   ['contingencia','Imprimir la planilla de contingencia',['adm']],
+  ['ver_visitas','Ver el registro de visitas (listado y en la ficha del residente)',['enf','med','adm']],
+  ['anular_visita','Anular una visita mal registrada (con motivo y PIN)',['enf','adm']],
   ['datos','Editar datos personales, contactos y obra social',['adm']],
   ['documentacion','Registrar documentación entregada / faltante',['adm']],
   ['ingreso_egreso','Registrar ingreso y egreso de residentes',['adm']],
@@ -366,9 +379,19 @@ const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','
 const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 function mesLabel(m){const p=m.split('-');return MESES[+p[1]-1]+' '+p[0];}
 function edad(nacKey){const n=new Date(keyToTs(nacKey,'12:00')),h=new Date();let e=h.getFullYear()-n.getFullYear();if(h.getMonth()<n.getMonth()||(h.getMonth()===n.getMonth()&&h.getDate()<n.getDate()))e--;return e;}
-function turnoDe(ts){const h=new Date(ts).getHours();return (h>=6&&h<14)?'Mañana':(h>=14&&h<22)?'Tarde':'Noche';}
-const TURNO_TXT={'Mañana':'06 a 14 h','Tarde':'14 a 22 h','Noche':'22 a 06 h'};
-function nurseFor(ts){return {'Mañana':'u_benitez','Tarde':'u_duarte','Noche':'u_rios'}[turnoDe(ts)];}
+/* Turnos de enfermería: 06 a 18 h ("Día") y 18 a 06 h ("Noche"), todos los días.
+   El turno de 18 a 06 pertenece a la fecha en que EMPEZÓ. */
+function turnoDe(ts){const h=new Date(ts).getHours();return (h>=6&&h<18)?'Día':'Noche';}
+const TURNO_TXT={'Día':'06 a 18 h','Noche':'18 a 06 h'};
+function tTxt(t){return TURNO_TXT[t]||t;}
+function fechaTurno(ts){return dayKey(ts-6*HOUR);}
+function turnoAct(ts){return {f:fechaTurno(ts),t:turnoDe(ts)};}
+function turnoIni(x){return keyToTs(x.f,x.t==='Día'?'06:00':'18:00');}
+function turnoFin(x){return turnoIni(x)+12*HOUR;}
+function turnoPrev(x){return x.t==='Día'?{f:addDays(x.f,-1),t:'Noche'}:{f:x.f,t:'Día'};}
+function turnoLbl(x){return 'turno '+tTxt(x.t)+' del '+fdKey(x.f);}
+function eF(e){return e.fechaT||fechaTurno(e.ts);}
+function nurseFor(ts){if(turnoDe(ts)==='Noche')return 'u_rios';return (+fechaTurno(ts).slice(8))%2?'u_duarte':'u_benitez';}
 function uid(p){return p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function rngF(seed){let a=seed;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
@@ -443,15 +466,15 @@ const ANT_CATS=['Alergia','Diagnóstico actual','Antecedente patológico','Antec
 const EXA_TIPOS=['Laboratorio','Electrocardiograma','Imagen','Certificado','Otro'];
 const MOTIVOS=['Rechazó la medicación','Dormido/a','En ayuno por estudio','Vómitos','Fuera de la residencia (salida / internación)','Falta de stock','No dar por parámetro (ej.: FC baja)','Otro'];
 const EGR_MOT=['Alta / retiro voluntario','Traslado a otra institución','Internación prolongada','Fallecimiento','Otro'];
-const COL_LBL={ind:'indicación médica',dosis:'administración de medicación',ctl:'control de signos vitales',evm:'evolución médica',eve:'evolución de enfermería',evesp:'evolución de especialista',rmes:'evolución mensual',esc:'escala geriátrica',inc:'incidente',age:'turno de agenda',doc:'documentación',nov:'novedad de guardia',ax:'antecedente / examen / medicación habitual'};
-const COLS=['ind','dosis','ctl','evm','eve','evesp','rmes','esc','inc','age','doc','nov','ax'];
+const COL_LBL={ind:'indicación médica',dosis:'administración de medicación',ctl:'control de signos vitales',evm:'evolución médica',eve:'evolución de enfermería',evesp:'evolución de especialista',rmes:'evolución mensual',esc:'escala geriátrica',inc:'incidente',age:'turno de agenda',doc:'documentación',nov:'novedad de guardia',ax:'antecedente / examen / medicación habitual',vis:'visita'};
+const COLS=['ind','dosis','ctl','evm','eve','evesp','rmes','esc','inc','age','doc','nov','ax','vis'];
 
 /* =========================================================
    DATOS INVENTADOS
    ========================================================= */
 function usersBase(ts){
   const u=(id,t,n,rol,mat,turno,pin,estado)=>({id,t,n,rol,mat,turno,pin,estado:estado||'activo',fallos:0,ultimo:null,alta:ts});
-  const L=[u('u_benitez','Enf.','Laura Benítez','enf','MP 99.101','Mañana','1111'),u('u_duarte','Enf.','Carla Duarte','enf','MP 99.102','Tarde','2222'),
+  const L=[u('u_benitez','Enf.','Laura Benítez','enf','MP 99.101','Día','1111'),u('u_duarte','Enf.','Carla Duarte','enf','MP 99.102','Día','2222'),
     u('u_rios','Enf.','Marcos Ríos','enf','MP 99.103','Noche','3333'),u('u_ferraro','Dra.','Silvia Ferraro','med','MP 99.001','','4444'),
     u('u_ortiz','Sra.','Paula Ortiz','adm','Administración','','5555'),u('u_luna','Sr.','Javier Luna','admin','Sistemas','','9999'),
     u('u_castro','Enf.','Rubén Castro','enf','MP 99.104','Franquero','7777','bloqueado'),
@@ -498,7 +521,7 @@ function seed(){
   const dk=d=>addDays(today,-d), at=(d,h)=>keyToTs(dk(d),h);
   const st={v:VER,seedDay:today,seedTs:now,userAdded:0,users:usersBase(at(420,'09:00')),
     config:{nombre:'Nuestro Hogar',sesionMin:5,backupHoras:24,lastBackup:null,lastBackupHash:''},
-    residents:residentesBase(dk),ind:[],dosis:[],ctl:[],evm:[],eve:[],evesp:[],rmes:[],esc:[],inc:[],age:[],doc:[],nov:[],ax:[],audit:[]};
+    residents:residentesBase(dk),ind:[],dosis:[],ctl:[],evm:[],eve:[],evesp:[],rmes:[],esc:[],inc:[],age:[],doc:[],nov:[],ax:[],vis:[],audit:[]};
   let n=0; const id=p=>{n++;return p+n;};
   const MED='u_ferraro', ADM='u_ortiz';
   const ING={r1:146,r2:300,r3:90,r4:400,r5:60,r6:200,r7:380};
@@ -584,7 +607,7 @@ function seed(){
   const parR2=st.ind.find(x=>x.resId==='r2'&&x.farmaco==='Paracetamol');
   [[4,'15:30'],[1,'16:10']].forEach(p=>{const t=at(p[0],p[1]);if(ok(t))st.dosis.push({id:id('a'),resId:'r2',indId:parR2.id,dia:dk(p[0]),hora:'SOS',estado:'dado',motivo:'Dolor de cadera 5/10',ts:t,tc:t,por:nurseFor(t)});});
 
-  /* --- evolución médica semanal --- */
+  /* --- evolución médica (quincenal como mínimo) --- */
   const E=(resId,d,h,texto,plan)=>{const t=at(d,h);if(ok(t))st.evm.push({id:id('m'),resId,ts:t,tc:t,texto,plan,por:MED});};
   E('r1',21,'10:00','Lúcido, orientado. Sin disnea. Edemas maleolares leves. TA en controles 130-140/80-85. Glucemias 110-170 mg/dl. Ruidos cardíacos normales, sin soplos. Murmullo vesicular conservado.','Continúa igual esquema. Peso semanal. Dieta hiposódica.');
   E('r1',14,'10:15','TA persistentemente elevada en controles de la semana (140-150/86-94). Asintomático. Sin signos de descompensación cardíaca.','Se aumenta enalapril a 10 mg cada 12 h (ver Indicaciones). Control de TA cada 12 h. Reevaluar en 7 días.');
@@ -597,26 +620,29 @@ function seed(){
   E('r3',23,'09:30','EPOC estable, disnea leve al esfuerzo. SatO₂ 92-95 % aire ambiente. FA con frecuencia controlada. Sin sangrados.','Continúa esquema. Kinesiología respiratoria 3 por semana.');
   E('r3',16,'09:30','Sin cambios. Buena tolerancia al ejercicio en kinesiología. TA 118-134/70-84.','Continúa esquema.');
   E('r3',9,'09:45','Estable. Refiere tos matinal habitual sin expectoración purulenta. Afebril.','Continúa esquema. Oxígeno solo si SatO₂ < 90 %.');
-  E('r4',4,'12:00','Control semanal. Estable, sin cambios. Diuresis conservada.','Continúa esquema. Función renal en 30 días.');
-  E('r5',12,'12:00','Control semanal. Temblor de reposo estable. Marcha con pasos cortos, sin caídas.','Continúa esquema.');
-  E('r6',2,'12:00','Control semanal. Ánimo mejor, participa en talleres. Come bien.','Continúa esquema.');
+  E('r4',4,'12:00','Control quincenal. Estable, sin cambios. Diuresis conservada.','Continúa esquema. Función renal en 30 días.');
+  E('r5',12,'12:00','Control quincenal. Temblor de reposo estable. Marcha con pasos cortos, sin caídas.','Continúa esquema.');
+  E('r6',2,'12:00','Control quincenal. Ánimo mejor, participa en talleres. Come bien.','Continúa esquema.');
 
-  /* --- evolución de enfermería --- */
-  const TUR=[['Mañana','13:30'],['Tarde','21:30'],['Noche','05:30']];
-  const V=(resId,t,o)=>{if(!ok(t))return;st.eve.push(Object.assign({id:id('e'),resId,ts:t,tc:t,turno:turnoDe(t),higiene:'',alim:'',animo:'',descanso:'',movil:'',incid:'Sin incidencias',texto:'',por:nurseFor(t)},o));};
+  /* --- evolución de enfermería: 2 turnos (06 a 18 h y 18 a 06 h), una por turno y por residente --- */
+  const V=(resId,t,o)=>{if(!ok(t))return;st.eve.push(Object.assign({id:id('e'),resId,ts:t,tc:t,turno:turnoDe(t),fechaT:fechaTurno(t),higiene:'',alim:'',animo:'',descanso:'',movil:'',incid:'Sin incidencias',texto:'',por:nurseFor(t)},o));};
   const PER={
-    r1:{movil:'Con bastón',txt:{'Mañana':['Baño en ducha con supervisión. Desayuno completo. Participa del taller de memoria.','Higiene asistida. Desayuno completo. Lee el diario en el living.'],'Tarde':['Almuerzo completo. Siesta. Camina por el patio.','Almuerzo 3/4. Recibe visita de su hijo.'],'Noche':['Descansa toda la noche. Una micción asistida.','Duerme bien. Sin novedades.']}},
-    r2:{movil:'Con andador',txt:{'Mañana':['Higiene en ducha con dos personas. Desayuno asistido, come todo.','Higiene completa. Desorientada en tiempo, tranquila.'],'Tarde':['Almuerzo asistido, come la mitad. Algo inquieta a la tarde, se calma con música.','Almuerzo completo. Recibe visita de su hija.'],'Noche':['Duerme desde las 23 h. Un cambio de pañal. Barandas elevadas.','Despierta 2 veces, se reorienta y vuelve a dormir.']}},
-    r3:{movil:'Deambula solo',txt:{'Mañana':['Higiene independiente con supervisión. Inhalador con técnica correcta.','Kinesiología respiratoria. Buena tolerancia.'],'Tarde':['Almuerzo completo. Juega a las cartas.','Leve disnea al subir la rampa, cede con reposo.'],'Noche':['Duerme con cabecera elevada. Sin disnea nocturna.','Tos seca a la madrugada, cede sola.']}}
+    r1:{movil:'Con bastón',txt:{'Día':['Baño en ducha con supervisión. Desayuno y almuerzo completos. Participa del taller de memoria. Siesta.','Higiene asistida. Come completo. Camina por el patio. Recibe visita de su hijo a la tarde.'],'Noche':['Cena completa. Descansa toda la noche. Una micción asistida.','Cena 3/4. Duerme bien. Sin novedades.']}},
+    r2:{movil:'Con andador',txt:{'Día':['Higiene en ducha con dos personas. Desayuno asistido, come todo. Algo inquieta a la tarde, se calma con música.','Higiene completa. Desorientada en tiempo, tranquila. Almuerzo completo. Recibe visita de su hija.'],'Noche':['Cena asistida. Duerme desde las 23 h. Un cambio de pañal. Barandas elevadas.','Despierta 2 veces, se reorienta y vuelve a dormir.']}},
+    r3:{movil:'Deambula solo',txt:{'Día':['Higiene independiente con supervisión. Inhalador con técnica correcta. Juega a las cartas.','Kinesiología respiratoria, buena tolerancia. Leve disnea al subir la rampa, cede con reposo.'],'Noche':['Duerme con cabecera elevada. Sin disnea nocturna.','Tos seca a la madrugada, cede sola.']}},
+    r4:{movil:'Deambula solo',txt:{'Día':['Higiene independiente. Come completo. Sin novedades.','Participa del taller de lectura. Diuresis conservada.'],'Noche':['Duerme bien. Sin novedades.','Una micción nocturna. Descansa.']}},
+    r5:{movil:'Con andador',txt:{'Día':['Higiene asistida. Levodopa en horario exacto. Marcha con pasos cortos, sin caídas.','Come completo con asistencia parcial. Temblor de reposo habitual.'],'Noche':['Duerme bien. Sin novedades.','Despierta una vez, se acompaña al baño.']}},
+    r6:{movil:'Deambula solo',txt:{'Día':['Baño en ducha. Participa del taller de manualidades. Buen ánimo.','Come completo. Charla con otras residentes en el living.'],'Noche':['Duerme bien. Sin novedades.','Le cuesta conciliar el sueño, se ofrece té. Duerme desde las 0 h.']}}
   };
-  for(const rid of ['r1','r2','r3']){const p=PER[rid];
-    for(let d=6;d>=0;d--)for(const [tu,h] of TUR){const t=at(d,h)+RI(0,20)*MIN,arr=p.txt[tu];
-      V(rid,t,{higiene:tu==='Mañana'?(rid==='r2'?'Higiene asistida':'Baño en ducha'):'',alim:tu==='Noche'?'':(rnd()<.75?'Completa':'Parcial (más de la mitad)'),animo:rid==='r2'&&tu==='Tarde'&&rnd()<.5?'Ansioso/a':'Tranquilo/a',descanso:tu==='Noche'?(rnd()<.8?'Durmió bien':'Despertares'):'',movil:p.movil,texto:arr[RI(0,arr.length-1)]});}}
+  const tPrev=turnoPrev(turnoAct(now)); /* a Peralta (r5) le falta la del turno anterior: genera el aviso de pendiente */
+  for(const rid of ['r1','r2','r3','r4','r5','r6']){const p=PER[rid];
+    for(let d=27;d>=0;d--)for(const tu of ['Día','Noche']){const f=dk(d);
+      if(rid==='r5'&&f===tPrev.f&&tu===tPrev.t)continue;
+      if(rid==='r2'&&d===0&&tu==='Día')continue; /* la de hoy de Ledesma es la de la febrícula (abajo) */
+      const t=(tu==='Día'?keyToTs(f,'17:30'):keyToTs(addDays(f,1),'05:30'))+RI(0,20)*MIN,arr=p.txt[tu];
+      V(rid,t,{turno:tu,fechaT:f,higiene:tu==='Día'?(rid==='r2'||rid==='r5'?'Higiene asistida':'Baño en ducha'):'',alim:rnd()<.75?'Completa':'Parcial (más de la mitad)',animo:rid==='r2'&&tu==='Día'&&rnd()<.5?'Ansioso/a':'Tranquilo/a',descanso:tu==='Noche'?(rnd()<.8?'Durmió bien':'Despertares'):'',movil:p.movil,texto:arr[RI(0,arr.length-1)]});}}
   V('r2',at(11,'03:40'),{animo:'Desorientado/a',descanso:'Despertares',movil:'Con andador',incid:'Caída',texto:'Encontrada sentada en el piso junto a la cama. Ver registro de incidente.'});
   V('r2',at(0,'13:30'),{higiene:'Higiene asistida',alim:'Escasa (menos de la mitad)',animo:'Decaído/a',movil:'Con andador',incid:'Consulta / derivación',texto:'Rechazó amlodipina de las 08 h. Febrícula (37,8 °C), come poco. Se avisa a médica de cabecera; se refuerza hidratación.'});
-  V('r4',at(1,'13:30'),{higiene:'Baño en ducha',alim:'Completa',animo:'Tranquilo/a',movil:'Deambula solo',texto:'Sin novedades.'});
-  V('r5',at(2,'13:30'),{higiene:'Higiene asistida',alim:'Completa',animo:'Tranquilo/a',movil:'Con andador',texto:'Sin novedades.'});
-  V('r6',at(1,'13:30'),{higiene:'Baño en ducha',alim:'Completa',animo:'Tranquilo/a',movil:'Deambula solo',texto:'Participa del taller de manualidades.'});
 
   /* --- incidente --- */
   const ti=at(11,'03:40');
@@ -643,10 +669,10 @@ function seed(){
       st.doc.push({id:id('d'),resId:r.id,item:it,estado:est,nota:'',ts:t,tc:t,por:ADM});}}
 
   /* --- novedades de guardia --- */
-  const N=(d,h,por,texto,resId,imp,leido)=>{const t=at(d,h);if(ok(t))st.nov.push({id:id('v'),resId:resId||'',ts:t,tc:t,turno:turnoDe(t),texto,importante:!!imp,lecturas:leido?[{por:leido,ts:t+30*MIN}]:[],por});};
-  N(1,'13:50','u_benitez','Sin novedades relevantes en el turno. Fontana hizo kinesiología respiratoria.','',false,'u_duarte');
-  N(1,'12:30','u_ferraro','Pasar mañana por Ledesma: si la temperatura supera 38 °C, avisarme al celular. Ramírez: controlar TA cada 12 h.','',true,'u_duarte');
-  N(1,'21:45','u_duarte','Ramírez con TA 150/92 a la noche; se avisó a la Dra. Ferraro, indica control a la mañana. Visita de la familia de Ledesma.','r1',false,'u_rios');
+  const N=(d,h,por,texto,resId,imp,leido,lts)=>{const t=at(d,h);if(!ok(t))return;const l=lts||t+30*MIN;st.nov.push({id:id('v'),resId:resId||'',ts:t,tc:t,turno:turnoDe(t),fechaT:fechaTurno(t),texto,importante:!!imp,lecturas:leido&&ok(l)?[{por:leido,ts:l}]:[],por});};
+  N(1,'17:50',nurseFor(at(1,'12:00')),'Sin novedades relevantes en el turno. Fontana hizo kinesiología respiratoria. Ledesma recibió visita de su hija.','',false,'u_rios',at(1,'18:20'));
+  N(1,'12:30','u_ferraro','Pasar mañana por Ledesma: si la temperatura supera 38 °C, avisarme al celular. Ramírez: controlar TA cada 12 h.','',true,nurseFor(at(1,'12:00')));
+  N(1,'21:45','u_rios','Ramírez con TA 150/92 a la noche; se avisó a la Dra. Ferraro, indica control a la mañana.','r1',false,nurseFor(at(0,'12:00')),at(0,'06:15'));
   N(0,'05:50','u_rios','Ledesma: febrícula 37,8 a las 05 h, se dieron líquidos. Fontana: tos a la madrugada, saturó 89 %, se colocó O₂ 2 l/min y mejoró a 92 %.','',true,null);
 
   /* --- evolución de especialistas --- */
@@ -670,6 +696,12 @@ function seed(){
     st.rmes.push({id:id('r'),resId:x[0],mes:mp,tipo:'med',texto:x[1],ts:tr,tc:tr,por:MED});
     st.rmes.push({id:id('r'),resId:x[0],mes:mp,tipo:'enf',texto:x[2],ts:tr+HOUR,tc:tr+HOUR,por:'u_duarte'});});
 
+  /* --- visitas (familiares e invitados; DNI ficticios 99.800.xxx) --- */
+  const VI=(d,h,dni,resId,an)=>{const t=at(d,h);if(!ok(t))return;const x={id:id('w'),resId,dni,ts:t,tc:t,por:'visita'};if(an&&ok(t+an[0]*MIN))x.anul={fecha:t+an[0]*MIN,por:an[1],motivo:an[2]};st.vis.push(x);};
+  VI(6,'16:10','99800101','r1');VI(5,'17:30','99800102','r2');VI(4,'11:00','99800103','r3');VI(3,'16:45','99800101','r1');
+  VI(2,'15:20','99800104','r3',[3,'u_ortiz','El visitante tocó el residente equivocado: venía a ver a Ledesma. Se registró de nuevo.']);VI(2,'15:22','99800104','r2');
+  VI(1,'17:00','99800105','r6');VI(1,'18:30','99800102','r2');VI(0,'10:30','99800106','r4');VI(0,'16:15','99800101','r1');
+
   for(const c of COLS)st[c].sort((a,b)=>(a.ts||0)-(b.ts||0));
 
   /* --- auditoría inicial (encadenada) --- */
@@ -677,8 +709,9 @@ function seed(){
   for(const i of st.ind){P(i.fecha,i.por,i.reemplazaA?'Modificación de indicación (nueva línea)':'Alta de indicación',i.resId,i.farmaco+' '+i.dosis);if(i.susp)P(i.susp.fecha,i.susp.por,'Suspensión de indicación',i.resId,i.farmaco+' — '+i.susp.motivo);}
   for(const a of st.dosis){const i=st.ind.find(x=>x.id===a.indId);P(a.ts,a.por,a.estado==='dado'?'Medicación administrada':'Medicación NO administrada',a.resId,(i?i.farmaco:'')+' '+a.hora);}
   for(const c of st.ctl)P(c.tc,c.por,c.papel?'Control de signos vitales (cargado desde papel)':'Control de signos vitales',c.resId,'');
-  for(const e of st.evm)P(e.ts,e.por,'Evolución médica semanal',e.resId,'');
-  for(const e of st.eve)P(e.ts,e.por,'Evolución de enfermería',e.resId,'Turno '+e.turno);
+  for(const e of st.evm)P(e.ts,e.por,'Evolución médica',e.resId,'');
+  for(const e of st.eve)P(e.ts,e.por,'Evolución de enfermería',e.resId,'Turno '+tTxt(e.turno)+' del '+fdKey(e.fechaT));
+  for(const v of st.vis){P(v.ts,'visita','Registro de visita',v.resId,'DNI terminado en '+v.dni.slice(-3));if(v.anul)P(v.anul.fecha,v.anul.por,'Anulación de visita',v.resId,v.anul.motivo);}
   for(const e of st.evesp)P(e.ts,e.por,'Evolución de especialista ('+e.especialidad+')',e.resId,'');
   [9,8,6,4,2,1].forEach(d=>P(at(d,'10:20'),'u_paz','Ingreso al sistema'));[12,7].forEach(d=>P(at(d,'09:20'),'u_quiroga','Ingreso al sistema'));
   for(const e of st.rmes)P(e.ts,e.por,'Evolución mensual',e.resId,mesLabel(e.mes));
@@ -689,7 +722,7 @@ function seed(){
   for(const e of st.nov){P(e.ts,e.por,'Novedad de guardia',e.resId,'');e.lecturas.forEach(l=>P(l.ts,l.por,'Lectura de novedad de guardia',e.resId,''));}
   P(r3.rangosHist[0].ts,MED,'Cambio de rango de alarma',r3.id,'SatO₂ 92-100 → 90-100');
   P(r7.egreso.ts,ADM,'Egreso de residente',r7.id,r7.egreso.motivo);
-  for(let d=6;d>=0;d--){P(at(d,'06:02'),'u_benitez','Ingreso al sistema');P(at(d,'14:01'),'u_duarte','Ingreso al sistema');P(at(d,'22:03'),'u_rios','Ingreso al sistema');if(d%2===0)P(at(d,'09:55'),MED,'Ingreso al sistema');P(at(d,'08:30'),ADM,'Ingreso al sistema');}
+  for(let d=6;d>=0;d--){P(at(d,'06:02'),nurseFor(at(d,'06:02')),'Ingreso al sistema');P(at(d,'18:03'),'u_rios','Ingreso al sistema');if(d%2===0)P(at(d,'09:55'),MED,'Ingreso al sistema');P(at(d,'08:30'),ADM,'Ingreso al sistema');}
   P(at(3,'07:58'),'u_castro','PIN incorrecto','','Intento 5 de 5');P(at(3,'07:58')+1000,'u_castro','Usuario bloqueado por intentos fallidos','','5 PIN incorrectos seguidos');
   const bk=at(1,'19:00');if(ok(bk)){P(bk-60000,'u_luna','Ingreso al sistema');P(bk,'u_luna','Exportación de respaldo completo','','respaldo-nuestrohogar (ficticio)');st.config.lastBackup=bk;st.config.lastBackupHash='(respaldo de ejemplo)';}
   ev.sort((a,b)=>a.ts-b.ts);
@@ -708,8 +741,9 @@ function me(){return SESSION?S.users[SESSION.user]:null;}
 function rol(){const u=me();return u?u.rol:'';}
 function can(p){return !!SESSION&&(PERM_MAP[p]||[]).includes(rol());}
 function canW(p,r){return can(p)&&(!r||r.estado==='activo');}
-function uName(id){const u=S.users[id];return u?u.t+' '+u.n:String(id||'');}
-function uFull(id){const u=S.users[id];if(!u)return String(id||'');if(u.rol==='esp')return u.t+' '+u.n+' ('+(u.esp||'Especialista')+', '+u.mat+')';return u.t+' '+u.n+' ('+((u.rol==='enf'||u.rol==='med')?u.mat:ROLES[u.rol])+')';}
+const VIS_USER='Visitante (se registró solo en la pantalla de ingreso)';
+function uName(id){if(id==='visita')return 'Visitante';const u=S.users[id];return u?u.t+' '+u.n:String(id||'');}
+function uFull(id){if(id==='visita')return VIS_USER;const u=S.users[id];if(!u)return String(id||'');if(u.rol==='esp')return u.t+' '+u.n+' ('+(u.esp||'Especialista')+', '+u.mat+')';return u.t+' '+u.n+' ('+((u.rol==='enf'||u.rol==='med')?u.mat:ROLES[u.rol])+')';}
 function getRes(id){return S.residents.find(r=>r.id===id);}
 function getInd(id){return S.ind.find(i=>i.id===id);}
 function find(col,id){return S[col].find(x=>x.id===id);}
@@ -784,8 +818,11 @@ function alertas(r){
     if(atr.length)a.push({l:'bad',t:'Medicación sin registrar (atrasada): '+atr.map(s=>s.hora+' '+s.ind.farmaco).join(', ')});
     if(nod.length)a.push({l:'warn',t:'Medicación NO administrada hoy: '+nod.map(s=>s.hora+' '+s.ind.farmaco).join(', ')});
     const ev=byRes('evm',r.id),le=ev[ev.length-1];
-    if(!le||now-le.ts>7*DAY)a.push({l:'bad',t:'Evolución médica semanal vencida'+(le?' (última: '+fd(le.ts)+', hace '+Math.floor((now-le.ts)/DAY)+' días)':'')});
-    else if(now-le.ts>6*DAY)a.push({l:'warn',t:'Evolución médica semanal vence mañana (última: '+fd(le.ts)+')'});
+    if(!le||now-le.ts>EVM_DIAS*DAY)a.push({l:'bad',t:'Evolución médica quincenal vencida'+(le?' (última: '+fd(le.ts)+', hace '+Math.floor((now-le.ts)/DAY)+' días)':'')});
+    else if(now-le.ts>(EVM_DIAS-2)*DAY)a.push({l:'warn',t:'Evolución médica quincenal vence el '+fd(le.ts+EVM_DIAS*DAY)+' (última: '+fd(le.ts)+')'});
+    {const cur=turnoAct(now),pv=turnoPrev(cur),ing=keyToTs(r.ingreso,'00:00');
+      if(turnoIni(pv)>=ing&&!evesDe(r,pv).length)a.push({l:'bad',t:'Falta la evolución de enfermería del '+turnoLbl(pv)});
+      if(turnoFin(cur)-now<=HOUR&&!evesDe(r,cur).length)a.push({l:'warn',t:'Evolución de enfermería del turno '+tTxt(cur.t)+' pendiente (cierra a las '+ft(turnoFin(cur))+')'});}
     const inc=byRes('inc',r.id).filter(x=>now-x.ts<72*HOUR);
     if(inc.length)a.push({l:'warn',t:'Incidente en las últimas 72 h: '+inc.map(x=>x.tipo+' ('+fdt(x.ts)+')').join(', ')});
   }
@@ -800,15 +837,15 @@ function alertas(r){
    ========================================================= */
 let VW={page:'home',resId:null,tab:'datos'};
 const UI={q:'',estado:'activo',indView:'vig',admDay:null,chartVar:'ta',mes:null,ctlAll:false,papel:false,loginUser:null,
-  aud:{u:'',r:'',desde:'',hasta:'',q:''},cgTurno:null,cgDia:null};
+  aud:{u:'',r:'',desde:'',hasta:'',q:''},cgTurno:null,cgDia:null,visita:null,vis:{dia:'',res:''}};
 const TABS=[
   ['datos','Datos personales e ingreso','ver_basicos'],['docs','Documentación','ver_docs'],
   ['ant','Antecedentes y alergias','ver_clinica'],['medhab','Medicación habitual','ver_clinica'],['exa','Exámenes de ingreso','ver_clinica'],
   ['esc','Escalas geriátricas','ver_clinica'],['ind','Indicaciones médicas','ver_clinica'],['dosis','Administración de medicación','ver_clinica'],
-  ['ctl','Controles de enfermería','ver_clinica'],['evm','Evolución médica semanal','ver_clinica'],['eve','Evolución de enfermería','ver_clinica'],['evesp','Evolución de especialistas','ver_clinica'],
-  ['inc','Caídas e incidentes','ver_clinica'],['age','Agenda de turnos','ver_agenda'],['mes','Resumen mensual','ver_clinica'],['legajo','Legajo (imprimir)','legajo']
+  ['ctl','Controles de enfermería','ver_clinica'],['evm','Evolución médica quincenal','ver_clinica'],['eve','Evolución de enfermería por turno','ver_clinica'],['evesp','Evolución de especialistas','ver_clinica'],
+  ['inc','Caídas e incidentes','ver_clinica'],['age','Agenda de turnos','ver_agenda'],['vis','Visitas','ver_visitas'],['mes','Resumen mensual','ver_clinica'],['legajo','Legajo (imprimir)','legajo']
 ];
-const PAGES={home:['Residentes','ver_basicos'],guardia:['Pase de guardia','ver_clinica'],agenda:['Agenda','ver_agenda'],contingencia:['Planilla de contingencia','contingencia'],
+const PAGES={home:['Residentes','ver_basicos'],guardia:['Pase de guardia','ver_clinica'],agenda:['Agenda','ver_agenda'],visitas:['Visitas','ver_visitas'],contingencia:['Planilla de contingencia','contingencia'],
   corte:['Si se corta la luz',null],respaldo:['Respaldo','exportar'],auditoria:['Auditoría','auditoria'],usuarios:['Usuarios','usuarios'],permisos:['Permisos','usuarios'],config:['Configuración','config']};
 function pageOk(p){const x=PAGES[p];return !!x&&(!x[1]||can(x[1]));}
 function go(page,rid,tab){
@@ -846,17 +883,18 @@ function render(){
     const on=(VW.page===k)||(k==='home'&&VW.page==='res');let b='';
     if(k==='guardia'&&nl)b=` <span class="badge">${nl}</span>`;if(k==='respaldo'&&bk&&can('restaurar'))b=' <span class="badge">!</span>';
     return `<a href="#/${k==='home'?'':k}" class="${on?'on':''}">${PAGES[k][0]}${b}</a>`;}).join('')+'</div>';
-  const R={home:renderHome,res:renderRes,guardia:renderGuardia,agenda:renderAgenda,contingencia:renderCont,corte:renderCorte,respaldo:renderRespaldo,auditoria:renderAuditoria,usuarios:renderUsuarios,permisos:renderPermisos,config:renderConfig};
+  const R={home:renderHome,res:renderRes,guardia:renderGuardia,agenda:renderAgenda,visitas:renderVisitas,contingencia:renderCont,corte:renderCorte,respaldo:renderRespaldo,auditoria:renderAuditoria,usuarios:renderUsuarios,permisos:renderPermisos,config:renderConfig};
   $('#app').innerHTML=(R[VW.page]||renderHome)();
   [['#nav .nav-in',navX,'a.on'],['#app .tabs',tabsX,'.on']].forEach(([q,x,act])=>{const e=document.querySelector(q);if(!e)return;e.scrollLeft=x;const a=e.querySelector(act);if(a){const er=e.getBoundingClientRect(),ar=a.getBoundingClientRect();if(ar.left<er.left)e.scrollLeft-=er.left-ar.left+12;else if(ar.right>er.right)e.scrollLeft+=ar.right-er.right+12;}});
   if(VW.page==='res'&&VW.tab==='legajo')setPageStyle('Legajo de '+getRes(VW.resId).ap+', '+getRes(VW.resId).no+' — DNI '+getRes(VW.resId).dni);
-  if(VW.page==='contingencia')setPageStyle('Planilla de contingencia — '+fdKey(UI.cgDia||dayKey(Date.now())));
+  if(VW.page==='contingencia')setPageStyle('Planilla de contingencia — '+fdKey(UI.cgDia||fechaTurno(Date.now())));
 }
 function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),2800);}
 function setPageStyle(t){t=t.replace(/["\\]/g,'');$('#pageStyle').textContent='@page{@top-center{content:"BOCETO — DATOS FICTICIOS";font-size:8pt;color:#6b3d8f;font-weight:bold}@bottom-left{content:"'+t+'";font-size:8pt;color:#555}@bottom-right{content:"Folio " counter(page) " de " counter(pages);font-size:8pt;color:#555}}';}
 
 /* ---------- ingreso ---------- */
 function renderLogin(){
+  if(UI.visita)return renderVisita();
   const us=Object.values(S.users);
   if(UI.loginUser&&S.users[UI.loginUser]){
     const u=S.users[UI.loginUser];
@@ -876,13 +914,55 @@ function renderLogin(){
       <h2 style="margin:14px 0 4px">${esc(sv[1])}</h2><p class="muted small" style="margin-top:0">Tocá tu nombre y poné tu PIN.</p>${msg}
       <div class="ucards">${lst.map(card).join('')||'<p class="empty">No hay usuarios en este servicio.</p>'}</div></div></div>`;
   }
-  return `<div class="login"><div class="card"><h2>Ingreso al sistema</h2>
+  return `<div class="login"><div class="card vcta"><div><h2>Familiares e invitados</h2><p class="small" style="margin:4px 0 0">Registrá tu visita con tu DNI. No hace falta usuario.</p></div><button class="btn pri vbtn" onclick="visIniciar()">Registrar visita</button></div>
+    <div class="card"><h2>Ingreso del personal</h2>
     <p class="hint">Elegí tu servicio, tocá tu nombre y poné tu PIN: así queda registrado quién escribió cada cosa. <b>En el boceto los PIN están a la vista.</b> En el sistema real va una contraseña segura personal, y se puede sumar un segundo factor.</p>
     ${msg}
     <div class="svcs">${SERVICIOS.map(s=>{const n=us.filter(u=>u.rol===s[0]&&u.estado==='activo').length;return `<button class="svc" onclick="UI.loginSvc='${s[0]}';LOGIN_MSG='';render()"><b>${s[1]}</b><span>${s[2]}</span><small>${n} usuario${n===1?'':'s'} activo${n===1?'':'s'}</small></button>`;}).join('')}</div>
     <div style="text-align:center;margin-top:14px"><button class="btn link" onclick="UI.loginSvc='admin';LOGIN_MSG='';render()">Administración del sistema</button></div>    <p class="small muted" style="margin-top:10px">Tras 5 PIN incorrectos el usuario se bloquea. La sesión se cierra sola después de ${S.config.sesionMin} minutos sin uso.</p></div></div>`;
 }
 function pinKey(k){const i=$('#pin');if(!i)return;if(k==='del')i.value=i.value.slice(0,-1);else if(i.value.length<6)i.value+=k;}
+
+/* ---------- registro de visitas (sin usuario, sin ver datos clínicos) ---------- */
+let VIS_T=null;
+function visArm(ms){clearTimeout(VIS_T);VIS_T=setTimeout(visFin,ms);}
+function visIniciar(){UI.visita={paso:1,dni:'',res:''};UI.loginSvc=null;UI.loginUser=null;LOGIN_MSG='';render();}
+function visFin(){clearTimeout(VIS_T);VIS_T=null;if(!UI.visita)return;UI.visita=null;if(!SESSION)render();}
+function visSan(el){el.value=el.value.replace(/[^0-9]/g,'').slice(0,8);const e=$('#verr');if(e)e.textContent='';visArm(90000);}
+function visKey(k){const i=$('#vdni');if(!i)return;if(k==='del')i.value=i.value.slice(0,-1);else if(i.value.length<8)i.value+=k;visSan(i);}
+function dniValido(v){if(!/^[0-9]+$/.test(v))return 'Escribí solo números, sin puntos ni espacios.';if(v.length<7||v.length>8)return 'El DNI tiene que tener 7 u 8 números (escribiste '+v.length+').';if(v[0]==='0')return 'Revisá el número: un DNI no empieza con 0.';return '';}
+function fmtDni(v){return String(v||'').replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function visDni(e){e.preventDefault();const v=String($('#vdni').value||'').trim(),err=dniValido(v);if(err){$('#verr').textContent=err;return;}UI.visita.dni=v;UI.visita.paso=2;render();}
+function visRes(id){if(!getRes(id))return;UI.visita.res=id;UI.visita.paso=3;render();}
+const VIS_DUP_MIN=10; /* minutos: mismo DNI + mismo residente dentro de este lapso = misma visita (doble toque) */
+function visConfirmar(btn){
+  if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent='Guardando…';}
+  const v=UI.visita,r=v&&getRes(v.res);if(!v||v.paso!==3||!r||r.estado!=='activo'||dniValido(v.dni)){visFin();return;}
+  const now=Date.now(),dup=S.vis.filter(x=>!x.anul&&x.dni===v.dni&&x.resId===r.id&&now-x.ts>=0&&now-x.ts<VIS_DUP_MIN*MIN).sort((a,b)=>b.ts-a.ts)[0];
+  if(dup){v.paso=4;v.ts=dup.ts;v.dup=true;render();return;}
+  S.vis.push({id:uid('vis'),resId:r.id,dni:v.dni,ts:now,tc:now,por:'visita'});S.userAdded++;
+  audit('Registro de visita',r.id,'DNI terminado en '+v.dni.slice(-3),'visita');save();
+  v.paso=4;v.ts=now;v.dup=false;render();
+}
+function renderVisita(){
+  const v=UI.visita,stp=`<div class="vstep">Paso ${Math.min(v.paso,3)} de 3</div>`,cancel=`<button class="btn sm" onclick="visFin()">Cancelar</button>`;
+  if(v.paso===4){visArm(6000);const r=getRes(v.res);
+    return `<div class="login"><div class="card vok"><div class="vcheck" aria-hidden="true">&#10003;</div><h2>${v.dup?'Tu visita ya quedó registrada a las '+ft(v.ts):'Visita registrada'}</h2><p>Visitás a <b>${esc(r?r.ap+', '+r.no:'')}</b><br>${DIAS[new Date(v.ts).getDay()]} ${fdt(v.ts)}</p><p class="small muted">Gracias. Esta pantalla vuelve sola al inicio en unos segundos.</p><button class="btn pri" onclick="visFin()">Listo</button></div></div>`;}
+  visArm(90000);
+  if(v.paso===1)return `<div class="login"><div class="card"><div class="row" style="justify-content:space-between">${cancel}${stp}</div><h2 style="margin-top:12px">Registrar visita</h2>
+    <form onsubmit="visDni(event)" style="max-width:340px;margin:10px auto 0" novalidate><label class="fl">Tu DNI (solo números)<input class="vdni" id="vdni" inputmode="numeric" autocomplete="off" maxlength="8" value="${esc(v.dni)}" oninput="visSan(this)" placeholder="Ej.: 30111222" autofocus></label>
+    <div class="merr" id="verr"></div>
+    <div class="keypad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" onclick="visKey('${n}')">${n}</button>`).join('')}<button type="button" onclick="visKey('del')" aria-label="Borrar">←</button><button type="button" onclick="visKey('0')">0</button><button type="submit" class="btn pri" style="font-size:1rem">Seguir</button></div>
+    <p class="small muted">Tu DNI se guarda solo para el registro de visitas de la residencia. No vas a ver ni cargar ningún otro dato.</p></form></div></div>`;
+  if(v.paso===2){const act=S.residents.filter(r=>r.estado==='activo').sort((a,b)=>(a.ap+' '+a.no).localeCompare(b.ap+' '+b.no,'es'));
+    return `<div class="login"><div class="card"><div class="row" style="justify-content:space-between"><button class="btn sm" onclick="UI.visita.paso=1;render()">← Volver</button>${stp}</div><h2 style="margin-top:12px">Elegí a quién visitás</h2>
+      <div class="vlist">${act.map(r=>`<button class="ucard" onclick="visRes('${r.id}')"><b>${esc(r.ap+', '+r.no)}</b></button>`).join('')}</div>
+      <div style="margin-top:12px">${cancel}</div></div></div>`;}
+  const r=getRes(v.res);
+  return `<div class="login"><div class="card"><div class="row" style="justify-content:space-between"><button class="btn sm" onclick="UI.visita.paso=2;render()">← Volver</button>${stp}</div><h2 style="margin-top:12px">Confirmá tu visita</h2>
+    ${kv([['Tu DNI','<b style="font-size:1.2rem">'+esc(fmtDni(v.dni))+'</b>'],['Visitás a','<b style="font-size:1.2rem">'+esc(r?r.ap+', '+r.no:'')+'</b>'],['Fecha y hora',DIAS[new Date().getDay()]+' '+fdt(Date.now())]])}
+    <div class="row" style="margin-top:14px"><button class="btn ok vbtn" onclick="visConfirmar(this)">Confirmar visita</button>${cancel}</div></div></div>`;
+}
 function loginSubmit(e){e.preventDefault();const pin=$('#pin').value.trim();const r=doLogin(UI.loginUser,pin);
   if(r.ok){UI.loginUser=null;if(location.hash&&location.hash!=='#/'){location.hash='#/';}route();const nd=draftsOf(SESSION.user).length;toast('Bienvenido/a, '+uName(SESSION.user)+(nd?' — tenés '+nd+' borrador'+(nd>1?'es':'')+' sin guardar':''));}
   else{LOGIN_MSG=r.msg;if(S.users[UI.loginUser].estado!=='activo')UI.loginUser=null;render();}}
@@ -896,7 +976,7 @@ function renderHome(){
   if(can('restaurar')&&backupVencido())h+=`<div class="status bad"><b>Respaldo vencido.</b> El último respaldo es ${S.config.lastBackup?'del '+fdt(S.config.lastBackup):'inexistente'}. <a href="#/respaldo">Hacer respaldo ahora</a></div>`;
   h+=draftsBanner();
   if(can('ver_clinica')){const nl=novSinLeer();if(nl.length)h+=`<div class="status warn"><b>${nl.length} novedad${nl.length>1?'es':''} del pase de guardia sin leer.</b> <a href="#/guardia">Ver pase de guardia</a></div>`;}
-  h+=`<div class="home-h"><div><h2>Residentes</h2><div class="muted small">${DIAS[d.getDay()]} ${fd(now)} · ${ft(now)} · turno ${turnoDe(now).toLowerCase()}</div>
+  h+=`<div class="home-h"><div><h2>Residentes</h2><div class="muted small">${DIAS[d.getDay()]} ${fd(now)} · ${ft(now)} · ${turnoLbl(turnoAct(now))}</div>
     <div class="stats"><span class="pill pri">${act.length} activos</span>${can('ver_clinica')||can('documentacion')?`<span class="pill ${conAl?'bad':'ok'}">${conAl} con alertas</span>`:''}</div></div>
     <div class="row"><div class="seg"><button class="${UI.estado==='activo'?'on':''}" onclick="UI.estado='activo';render()">Activos (${act.length})</button><button class="${UI.estado!=='activo'?'on':''}" onclick="UI.estado='egresado';render()">Egresados (${egr.length})</button></div>
     <input type="search" placeholder="Buscar por nombre o habitación" value="${esc(UI.q)}" oninput="UI.q=this.value;document.getElementById('rlist').innerHTML=homeList()" aria-label="Buscar residente">
@@ -921,7 +1001,7 @@ function algBadge(r){const a=alergiasDe(r);return a.length?`<span class="alg">AL
 function renderRes(){
   const r=getRes(VW.resId),al=alertas(r);const tabs=TABS.filter(t=>can(t[2]));
   if(!tabs.some(t=>t[0]===VW.tab))VW.tab='datos';
-  const T={datos:tabDatos,docs:tabDocs,ant:tabAnt,medhab:tabMedHab,exa:tabExa,esc:tabEsc,ind:tabInd,dosis:tabDosis,ctl:tabCtl,evm:tabEvm,eve:tabEve,evesp:tabEvesp,inc:tabInc,age:tabAge,mes:tabMes,legajo:tabLegajo};
+  const T={datos:tabDatos,docs:tabDocs,ant:tabAnt,medhab:tabMedHab,exa:tabExa,esc:tabEsc,ind:tabInd,dosis:tabDosis,ctl:tabCtl,evm:tabEvm,eve:tabEve,evesp:tabEvesp,inc:tabInc,age:tabAge,vis:tabVis,mes:tabMes,legajo:tabLegajo};
   return `<div class="wrap"><button class="btn sm no-print" style="margin-bottom:10px" onclick="go('home')">← Volver a residentes</button>
     <section class="card rhead"><div><h1>${esc(r.ap+', '+r.no)}</h1><div class="rmeta">${edad(r.nac)} años · DNI ${esc(r.dni)} · ${esc(r.hab)} · ${esc(r.os)} · Ingreso ${fdKey(r.ingreso)}</div>
       <div class="row" style="margin-top:8px">${algBadge(r)}<button class="btn sm" onclick="verContactos('${r.id}')">Contactos de emergencia</button></div></div>
@@ -1163,8 +1243,9 @@ function tabDosis(r){
     <div class="daynav"><button class="btn sm" onclick="UI.admDay=addDays('${dk}',-1);render()">‹ Día anterior</button><b>${DIAS[new Date(keyToTs(dk,'12:00')).getDay()]} ${fdKey(dk)}</b>
     <button class="btn sm" ${dk>=today?'disabled':''} onclick="UI.admDay=addDays('${dk}',1);render()">Día siguiente ›</button>${dk!==today?`<button class="btn sm" onclick="UI.admDay=null;render()">Hoy</button>`:''}</div>`;
   if(!sl.length)h+='<p class="empty">No hay medicación programada este día.</p>';
-  ['Mañana','Tarde','Noche'].forEach(t=>{const g=sl.filter(s=>turnoDe(s.ts)===t);if(!g.length)return;
-    h+=`<div class="turno">Turno ${t.toLowerCase()} (${TURNO_TXT[t]})</div>`+g.map(s=>slotHtml(r,s,dk,now,w)).join('');});
+  const hh=s=>+s.hora.slice(0,2);
+  [['Turno 18 a 06 h del '+fdKey(addDays(dk,-1))+' (00 a 06 h)',s=>hh(s)<6],['Turno 06 a 18 h',s=>hh(s)>=6&&hh(s)<18],['Turno 18 a 06 h (18 a 24 h)',s=>hh(s)>=18]].forEach(([lbl,fn])=>{const g=sl.filter(fn);if(!g.length)return;
+    h+=`<div class="turno">${lbl}</div>`+g.map(s=>slotHtml(r,s,dk,now,w)).join('');});
   const sos=S.ind.filter(i=>i.resId===r.id&&i.tipo==='med'&&!i.horarios.length&&vigenteEn(i,Math.min(now,keyToTs(dk,'23:59'))));
   const sosRegs=S.dosis.filter(a=>a.resId===r.id&&a.dia===dk&&a.hora==='SOS');
   if(sos.length||sosRegs.length){
@@ -1216,9 +1297,9 @@ function darSOS(rid,indId){
 function papelBlock(){return `<div class="papel"><label class="chk"><input type="checkbox" name="papel" onchange="this.closest('form').querySelector('.papel-ts').hidden=!this.checked"> Cargado desde planilla de papel (contingencia)</label><label class="fl papel-ts" hidden>Fecha y hora real en que se hizo<input type="datetime-local" name="papelTs" value="${dtLocal(Date.now())}"></label></div>`;}
 function saveRec(col,x,fd,corrId,accion){
   if(corrId){const o=find(col,corrId);if(!canCorregir(col,o))return 'Ya pasaron los '+CORR_MIN+' minutos: ahora solo se puede anular con motivo.';
-    x.ts=o.ts;if(o.papel)x.papel=true;x.corrige=o.id;if(col==='nov'){x.turno=o.turno;x.lecturas=[];}
+    x.ts=o.ts;if(o.papel)x.papel=true;x.corrige=o.id;if(col==='nov'){x.turno=o.turno;x.fechaT=eF(o);x.lecturas=[];}
     const nw=add(col,x,'Corrección de '+COL_LBL[col]);o.corr={fecha:Date.now(),por:SESSION.user,nuevaId:nw.id};save();render();toast('Corregido. La versión anterior queda visible.');return true;}
-  if(fd&&fd.get('papel')){const t=parseDtLocal(fd.get('papelTs'));if(isNaN(t))return 'Poné la fecha y hora real.';if(t>Date.now()+5*MIN)return 'La fecha y hora real no puede ser futura.';if(t<Date.now()-7*DAY)return 'Solo se cargan desde papel registros de los últimos 7 días.';x.ts=t;x.papel=true;}
+  if(fd&&fd.get('papel')){const t=parseDtLocal(fd.get('papelTs'));if(isNaN(t))return 'Poné la fecha y hora real.';if(t>Date.now()+5*MIN)return 'La fecha y hora real no puede ser futura.';if(t<Date.now()-7*DAY)return 'Solo se cargan desde papel registros de los últimos 7 días.';x.ts=t;x.papel=true;if(col==='nov'){x.turno=turnoDe(t);x.fechaT=fechaTurno(t);}}
   add(col,x,accion);render();toast(x.papel?'Guardado como cargado desde papel':'Guardado');return true;
 }
 function corregir(col,id){const x=find(col,id);if(!canCorregir(col,x)){toast('Solo su autor, dentro de los '+CORR_MIN+' min.');return;}({ctl:formCtl,evm:formEvm,eve:formEve,evesp:formEsp,inc:formInc,esc:formEsc,nov:formNov})[col](x.resId,id);}
@@ -1313,16 +1394,16 @@ function chartSvg(r,v){
 function evmStatus(r){
   const ev=byRes('evm',r.id),le=ev[ev.length-1],now=Date.now();
   if(!le)return '<div class="status bad">Sin evoluciones médicas registradas.</div>';
-  const dias=Math.floor((now-le.ts)/DAY),cls=dias>7?'bad':dias>=6?'warn':'ok';
-  return `<div class="status ${cls}"><b>${dias>7?'VENCIDA':'Al día'}</b> Última evolución: ${fd(le.ts)} (hace ${dias} día${dias===1?'':'s'}) · ${dias>7?'debía hacerse antes del ':'próxima antes del '}${fd(le.ts+7*DAY)}</div>`;
+  const dias=Math.floor((now-le.ts)/DAY),venc=now-le.ts>EVM_DIAS*DAY,cls=venc?'bad':now-le.ts>(EVM_DIAS-2)*DAY?'warn':'ok';
+  return `<div class="status ${cls}"><b>${venc?'VENCIDA':'Al día'}</b> Última evolución: ${fd(le.ts)} (hace ${dias} día${dias===1?'':'s'}) · ${venc?'debía hacerse antes del ':'próxima antes del '}${fd(le.ts+EVM_DIAS*DAY)}</div>`;
 }
 function evmList(r,pr){const ev=byRes('evm',r.id,true).slice().reverse();return ev.length?ev.map(e=>`<div class="rec ${recCls(e)}"><div class="top2"><b>${fd(e.ts)}</b>${firma(e.por,e.ts)}</div><div class="body" style="margin-top:6px">${esc(e.texto)}${e.plan?`<div style="margin-top:6px"><b>Plan:</b> ${esc(e.plan)}</div>`:''}</div>${recNotes('evm',e)}${pr?'':recActs('evm',e)}</div>`).join(''):'<p class="empty">Sin evoluciones.</p>';}
-function tabEvm(r){return `<div class="card"><div class="sec-h"><h2>Evolución médica semanal</h2>${canW('evol_med',r)?`<button class="btn pri" onclick="formEvm('${r.id}')">+ Nueva evolución</button>`:''}</div>
-  <p class="hint">En Provincia de Buenos Aires la historia clínica se actualiza <b>en forma semanal</b> (Res. 3904/2013 art. 4). La evolución mensual está en "Resumen mensual".</p>${r.estado==='activo'?evmStatus(r):''}${can('evol_med')?'':lockMsg('evol_med','escribir la evolución médica')}${evmList(r,false)}</div>`;}
+function tabEvm(r){return `<div class="card"><div class="sec-h"><h2>Evolución médica quincenal</h2>${canW('evol_med',r)?`<button class="btn pri" onclick="formEvm('${r.id}')">+ Nueva evolución</button>`:''}</div>
+  <p class="hint">El médico evoluciona <b>cada 15 días como mínimo</b> (criterio de la residencia), y además cada vez que hay un cambio. La Res. 3904/2013 art. 4 (Prov. de Buenos Aires) pide que la historia clínica se actualice "en forma semanal": esa actualización la cubren los registros diarios de enfermería (controles y evolución por turno). La evolución mensual está en "Resumen mensual".</p>${r.estado==='activo'?evmStatus(r):''}${can('evol_med')?'':lockMsg('evol_med','escribir la evolución médica')}${evmList(r,false)}</div>`;}
 function formEvm(rid,corrId){
   const r=getRes(rid);if(!canW('evol_med',r))return deny('escribir evolución médica',rid);const o=corrId?find('evm',corrId):{texto:'',plan:''};
   modal(corrId?'Corregir evolución':'Evolución médica — '+r.ap,`<label class="fl">Estado general y examen físico<textarea name="texto" rows="5" required>${esc(o.texto)}</textarea></label><label class="fl">Conducta / plan<textarea name="plan" rows="3">${esc(o.plan)}</textarea></label>${corrId?'':papelBlock()}<p class="small muted">Firma: ${esc(uFull(SESSION.user))}</p>`,corrId?'Guardar corrección':'Firmar y guardar',fd=>{
-    const t=String(fd.get('texto')||'').trim();if(t.length<5)return 'Escribí la evolución.';return saveRec('evm',{resId:rid,texto:t,plan:String(fd.get('plan')||'').trim()},fd,corrId,'Evolución médica semanal');});
+    const t=String(fd.get('texto')||'').trim();if(t.length<5)return 'Escribí la evolución.';return saveRec('evm',{resId:rid,texto:t,plan:String(fd.get('plan')||'').trim()},fd,corrId,'Evolución médica');});
 }
 
 /* ---------- evolución de enfermería ---------- */
@@ -1336,19 +1417,41 @@ const EVG=[
 ];
 function eveCard(e,pr){
   const tags=EVG.map(g=>{const v=e[g[0]];if(!v)return '';return `<span class="pill ${g[0]==='incid'&&v!=='Sin incidencias'?'bad':''}">${g[1]}: ${esc(v)}</span>`;}).join(' ');
-  return `<div class="rec ${recCls(e)}"><div class="top2"><b>${fd(e.ts)} — turno ${esc(e.turno.toLowerCase())}</b>${firma(e.por,e.ts)}</div><div class="body" style="margin-top:6px">${tags}${e.texto?`<div style="margin-top:6px">${esc(e.texto)}</div>`:''}</div>${recNotes('eve',e)}${pr?'':recActs('eve',e)}</div>`;
+  return `<div class="rec ${recCls(e)}"><div class="top2"><b>${fdKey(eF(e))} — turno ${esc(tTxt(e.turno))}</b>${firma(e.por,e.ts,'Escribió ')}</div><div class="body" style="margin-top:6px">${tags}${e.texto?`<div style="margin-top:6px">${esc(e.texto)}</div>`:''}</div>${recNotes('eve',e)}${pr?'':recActs('eve',e)}</div>`;
 }
-function tabEve(r){return `<div class="card"><div class="sec-h"><h2>Evolución de enfermería por turno</h2>${canW('evol_enf',r)?`<button class="btn pri" onclick="formEve('${r.id}')">+ Nota del turno</button>`:''}</div>
-  <p class="hint">Para cargar rápido: se tocan opciones y, si hace falta, una línea de texto. Lo general del turno va en "Pase de guardia".</p>${can('evol_enf')?'':lockMsg('evol_enf','escribir la evolución de enfermería')}${byRes('eve',r.id,true).slice().reverse().map(e=>eveCard(e,false)).join('')||'<p class="empty">Sin notas.</p>'}</div>`;}
+function evesDe(r,x,incl){return S.eve.filter(e=>e.resId===r.id&&(incl||valid(e))&&e.turno===x.t&&eF(e)===x.f).sort((a,b)=>a.ts-b.ts);}
+function tabEve(r){
+  const now=Date.now(),cur=turnoAct(now),ing=keyToTs(r.ingreso,'00:00'),slots=[];
+  if(r.estado==='activo'){let x=cur;for(let i=0;i<14&&turnoIni(x)>=ing;i++){slots.push(x);x=turnoPrev(x);}}
+  const desde=slots.length?turnoIni(slots[slots.length-1]):Infinity;
+  const otras=byRes('eve',r.id,true).filter(e=>turnoIni({f:eF(e),t:e.turno})<desde).reverse();
+  const ce=evesDe(r,cur);
+  let h=`<div class="card"><div class="sec-h"><h2>Evolución de enfermería por turno</h2>${canW('evol_enf',r)?`<button class="btn pri" onclick="formEve('${r.id}')">+ Evolución del turno</button>`:''}</div>
+  <p class="hint">Dos turnos por día, todos los días (también sábados y domingos): <b>06 a 18 h</b> y <b>18 a 06 h</b>. Cada turno escribe su propia evolución, con firma y hora. El turno de 18 a 06 lleva la fecha del día en que empezó. Para cargar rápido: se tocan opciones y, si hace falta, una línea de texto. Lo general del turno va en "Pase de guardia".</p>${can('evol_enf')?'':lockMsg('evol_enf','escribir la evolución de enfermería')}`;
+  if(r.estado==='activo')h+=`<div class="status ${ce.length?'ok':'warn'}"><b>Turno actual: ${esc(tTxt(cur.t))} del ${fdKey(cur.f)}</b> · ${ce.length?'evolución escrita por '+esc(uName(ce[0].por))+' a las '+ft(ce[0].ts):'evolución pendiente (cierra a las '+ft(turnoFin(cur))+')'}</div>`;
+  if(slots.length)h+='<h3 class="sub">Últimos 7 días, turno por turno</h3>'+slots.map(x=>{const l=evesDe(r,x,true),enC=x.f===cur.f&&x.t===cur.t;
+    return `<div class="turno">${DIAS[new Date(keyToTs(x.f,'12:00')).getDay()]} ${fdKey(x.f)} · Turno ${tTxt(x.t)}${enC?' · <span class="pill pri">en curso</span>':''}</div>`+(l.length?l.map(e=>eveCard(e,false)).join(''):enC?'<p class="empty">Todavía sin evolución en este turno.</p>':'<div class="al bad" style="margin-bottom:8px">Sin evolución de enfermería en este turno.</div>');}).join('');
+  if(otras.length)h+=`<h3 class="sub">${slots.length?'Anteriores':'Evoluciones registradas'}</h3>`+otras.map(e=>eveCard(e,false)).join('');
+  if(!slots.length&&!otras.length)h+='<p class="empty">Sin notas.</p>';
+  return h+'</div>';
+}
 function formEve(rid,corrId){
   const r=getRes(rid);if(!canW('evol_enf',r))return deny('escribir evolución de enfermería',rid);
-  const o=corrId?find('eve',corrId):{turno:turnoDe(Date.now()),incid:'Sin incidencias',texto:''};
-  modal(corrId?'Corregir nota':'Nota del turno — '+r.ap,`<div class="glabel">Turno</div><div class="chips">${['Mañana','Tarde','Noche'].map(t=>`<label><input type="radio" name="turno" value="${t}"${o.turno===t?' checked':''}><span>${t}</span></label>`).join('')}</div>
+  const cur=turnoAct(Date.now());
+  const o=corrId?find('eve',corrId):{turno:cur.t,fechaT:cur.f,incid:'Sin incidencias',texto:''};const ya=corrId?[]:evesDe(r,cur);
+  modal(corrId?'Corregir evolución':'Evolución del turno — '+r.ap,`<p class="small muted" style="margin-top:0">El sistema propone el turno según la hora actual. El turno de 18 a 06 lleva la fecha del día en que empezó.</p>
+    <div class="glabel">Turno</div><div class="chips">${['Día','Noche'].map(t=>`<label><input type="radio" name="turno" value="${t}"${o.turno===t?' checked':''}><span>${tTxt(t)}</span></label>`).join('')}</div>
+    <label class="fl">Fecha del turno<input type="date" name="fechaT" value="${esc(eF(o))}" max="${cur.f}" required></label>
+    ${ya.length?`<div class="al info" style="margin-bottom:10px">Este turno ya tiene evolución (${ya.map(e=>esc(uName(e.por))+' '+ft(e.ts)).join(', ')}). Lo que guardes se suma como otra nota del mismo turno, con tu firma.</div>`:''}
     ${EVG.map(g=>`<div class="glabel">${g[1]}</div><div class="chips">${g[2].map(op=>`<label><input type="radio" name="${g[0]}" value="${esc(op)}"${o[g[0]]===op?' checked':''}><span>${esc(op)}</span></label>`).join('')}</div>`).join('')}
-    <label class="fl">Novedades<textarea name="texto" rows="3">${esc(o.texto)}</textarea></label>${corrId?'':papelBlock()}<p class="small muted">Firma: ${esc(uFull(SESSION.user))}</p>`,corrId?'Guardar corrección':'Guardar nota',fd=>{
-    const x={resId:rid,turno:fd.get('turno')||turnoDe(Date.now())};EVG.forEach(g=>x[g[0]]=fd.get(g[0])||'');x.texto=String(fd.get('texto')||'').trim();
+    <label class="fl">Novedades<textarea name="texto" rows="3">${esc(o.texto)}</textarea></label>${corrId?'':papelBlock()}<p class="small muted">Firma: ${esc(uFull(SESSION.user))} · la hora queda registrada al guardar</p>`,corrId?'Guardar corrección':'Firmar y guardar',fd=>{
+    const x={resId:rid,turno:fd.get('turno')||cur.t,fechaT:String(fd.get('fechaT')||'')};EVG.forEach(g=>x[g[0]]=fd.get(g[0])||'');x.texto=String(fd.get('texto')||'').trim();
+    if(!['Día','Noche'].includes(x.turno))return 'Elegí el turno.';
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(x.fechaT))return 'Poné la fecha del turno.';
+    const nowT=turnoAct(Date.now());if(turnoIni({f:x.fechaT,t:x.turno})>Date.now())return 'Ese turno todavía no empezó. Revisá la fecha y el turno (el de 18 a 06 lleva la fecha en que empezó).';
+    if(!corrId&&x.fechaT<addDays(nowT.f,-7))return 'Solo se cargan evoluciones de los últimos 7 días.';
     if(x.incid&&x.incid!=='Sin incidencias'&&x.incid!=='Visita familiar'&&x.texto.length<5)return 'Con una incidencia, describí qué pasó (y si fue una caída, cargala también en "Caídas e incidentes").';
-    if(!x.texto&&!x.higiene&&!x.alim&&!x.animo&&!x.descanso&&!x.movil&&(!x.incid||x.incid==='Sin incidencias'))return 'Marcá al menos una opción o escribí una novedad.';    return saveRec('eve',x,fd,corrId,'Evolución de enfermería');});
+    if(!x.texto&&!x.higiene&&!x.alim&&!x.animo&&!x.descanso&&!x.movil&&(!x.incid||x.incid==='Sin incidencias'))return 'Marcá al menos una opción o escribí una novedad.';    return saveRec('eve',x,fd,corrId,'Evolución de enfermería — turno '+tTxt(x.turno)+' del '+fdKey(x.fechaT));});
 }
 
 /* ---------- evolución de especialistas ---------- */
@@ -1431,6 +1534,40 @@ function cerrarTurno(id){
     x.cierre={estado:fd.get('estado'),ts:Date.now(),por:SESSION.user,nota:String(fd.get('nota')||'').trim()};S.userAdded++;audit('Turno '+x.cierre.estado.toLowerCase(),x.resId,x.detalle);save();render();toast('Turno cerrado');return true;});
 }
 
+/* ---------- visitas (lado del personal) ---------- */
+function visTable(list,showRes){
+  if(!list.length)return '<p class="empty">Sin visitas registradas.</p>';
+  const cols=showRes?6:5;
+  return `<div class="tscroll"><table><thead><tr><th>Fecha</th><th>Hora</th><th>DNI del visitante</th>${showRes?'<th>Residente</th>':''}<th>Estado</th><th></th></tr></thead><tbody>${list.map(v=>{const r=getRes(v.resId);
+    return `<tr class="${v.anul?'anul':''}"><td>${DIAS[new Date(v.ts).getDay()].slice(0,3)} ${fd(v.ts)}</td><td>${ft(v.ts)}</td><td>${esc(fmtDni(v.dni))}</td>${showRes?`<td>${r?`<a href="#/r/${r.id}/vis">${esc(r.ap+', '+r.no)}</a>`:''}</td>`:''}<td class="anl">${v.anul?'<span class="pill bad">Anulada</span>':'<span class="pill ok">Registrada</span>'}</td><td class="anl">${!v.anul&&can('anular_visita')?`<button class="btn link" onclick="anularVisita('${v.id}')">Anular con motivo</button>`:''}</td></tr>`+
+      (v.anul?`<tr><td colspan="${cols}" class="anl" style="padding-top:0"><div class="anul-note">ANULADA el ${fdt(v.anul.fecha)} por ${esc(uFull(v.anul.por))}. Motivo: ${esc(v.anul.motivo)}</div></td></tr>`:'');}).join('')}</tbody></table></div>`;
+}
+const VIS_HINT='Las registra el propio visitante en la pantalla de ingreso, con su DNI y el residente que visita. Nadie las edita ni las borra: un error se anula con motivo y PIN, y queda tachado.';
+function renderVisitas(){
+  const f=UI.vis,hoy=dayKey(Date.now());
+  const l=S.vis.filter(v=>(!f.dia||dayKey(v.ts)===f.dia)&&(!f.res||v.resId===f.res)).sort((a,b)=>b.ts-a.ts);
+  const val=l.filter(v=>!v.anul).length;
+  return `<div class="wrap"><div class="card"><div class="sec-h"><h2>Visitas</h2>${can('exportar')?`<button class="btn" onclick="exportCSV('vis')">Visitas (CSV para Excel)</button>`:''}</div>
+    <p class="hint">${VIS_HINT}</p>
+    <div class="fgrid c3"><label class="fl">Día<input type="date" value="${esc(f.dia)}" max="${hoy}" onchange="UI.vis.dia=this.value;render()"></label>
+    <label class="fl">Residente<select onchange="UI.vis.res=this.value;render()"><option value="">Todos</option>${S.residents.map(r=>`<option value="${r.id}"${f.res===r.id?' selected':''}>${esc(r.ap+', '+r.no)}${r.estado!=='activo'?' (egresado)':''}</option>`).join('')}</select></label>
+    <div class="fl" style="justify-content:flex-end"><div class="row"><button class="btn" onclick="UI.vis.dia='${hoy}';render()">Hoy</button><button class="btn" onclick="UI.vis={dia:'',res:''};render()">Ver todas</button></div></div></div>
+    <p class="small muted">${l.length} registro${l.length===1?'':'s'} (${val} válido${val===1?'':'s'}${l.length-val?', '+(l.length-val)+' anulado'+(l.length-val===1?'':'s'):''})${f.dia?' · día '+fdKey(f.dia):''}.</p>
+    ${visTable(l,true)}</div></div>`;
+}
+function tabVis(r){const l=S.vis.filter(v=>v.resId===r.id).sort((a,b)=>b.ts-a.ts);
+  return `<div class="card"><div class="sec-h"><h2>Visitas</h2></div><p class="hint">${VIS_HINT}</p><p class="small muted">${l.filter(v=>!v.anul).length} visita(s) registrada(s).</p>${visTable(l,false)}</div>`;}
+function anularVisita(id){
+  const v=find('vis',id);if(!v||v.anul)return;if(!can('anular_visita'))return deny('anular visitas',v.resId);
+  const r=getRes(v.resId);
+  modal('Anular visita',`<p>${fdt(v.ts)} — DNI ${esc(fmtDni(v.dni))} — ${esc(r?r.ap+', '+r.no:'')}</p><p class="hint">La visita <b>no se borra</b>: queda tachada y visible, con quién la anuló, cuándo y por qué. Queda en la auditoría.</p>
+    <label class="fl">Motivo de la anulación (obligatorio)<textarea name="motivo" rows="2" required placeholder="Ej.: el visitante eligió el residente equivocado"></textarea></label>
+    <label class="fl">Tu PIN, para confirmar<input name="pin" type="password" inputmode="numeric" autocomplete="off" required></label><p class="small muted">Anula: ${esc(uFull(SESSION.user))} · ${fdt(Date.now())}</p>`,'Anular visita',fd=>{
+    const m=String(fd.get('motivo')||'').trim();if(m.length<4)return 'Escribí el motivo.';
+    if(String(fd.get('pin')||'').trim()!==me().pin){audit('PIN incorrecto al anular visita',v.resId,'');save();return 'PIN incorrecto.';}
+    v.anul={fecha:Date.now(),por:SESSION.user,motivo:m};S.userAdded++;audit('Anulación de visita',v.resId,m);save();render();toast('Visita anulada. Queda visible y tachada.');return true;});
+}
+
 /* ---------- pase de guardia ---------- */
 function novSinLeer(){if(!SESSION||!can('ver_clinica'))return [];const lim0=Date.now()-36*HOUR;return S.nov.filter(n=>valid(n)&&n.ts>=lim0&&n.por!==SESSION.user&&!(n.lecturas||[]).some(l=>l.por===SESSION.user&&!l.anul));}
 function renderGuardia(){
@@ -1444,16 +1581,19 @@ function renderGuardia(){
     byRes('inc',r.id).filter(x=>x.ts>=desde).forEach(x=>it.push(['bad','Incidente: '+x.tipo+' '+ft(x.ts)]));
     byRes('evm',r.id).filter(x=>x.ts>=desde).forEach(()=>it.push(['info','Nueva evolución médica']));
     byRes('evesp',r.id).filter(x=>x.ts>=desde).forEach(x=>it.push(['info','Nueva evolución de '+x.especialidad+(x.plan?': '+x.plan:'')]));
+    {const pv=turnoPrev(turnoAct(now));if(turnoIni(pv)>=keyToTs(r.ingreso,'00:00')&&!evesDe(r,pv).length)it.push(['bad','Sin evolución de enfermería del '+turnoLbl(pv)]);}
     return [r,it];}).filter(x=>x[1].length);
   const nov=S.nov.filter(n=>n.ts>=now-48*HOUR).sort((a,b)=>b.ts-a.ts);
-  return `<div class="wrap"><div class="card"><div class="sec-h"><h2>Pase de guardia — turno ${turnoDe(now).toLowerCase()} (${TURNO_TXT[turnoDe(now)]})</h2>${can('guardia')?`<button class="btn pri" onclick="formNov('')">+ Escribir novedad</button>`:''}</div>
+  const cur=turnoAct(now),evOk=act.filter(r=>evesDe(r,turnoPrev(cur)).length).length;
+  return `<div class="wrap"><div class="card"><div class="sec-h"><h2>Pase de guardia — ${turnoLbl(cur)}</h2>${can('guardia')?`<button class="btn pri" onclick="formNov('')">+ Escribir novedad</button>`:''}</div>
     <p class="hint">Lo que tiene que saber el turno que entra. Arriba, lo que el sistema detectó solo en las últimas 12 h. Abajo, lo que escribió el equipo: al leerlo se toca "Tomé conocimiento" y queda registrado.</p>
+    <div class="status ${evOk===act.length?'ok':'bad'}">Evolución de enfermería del turno anterior (${esc(tTxt(turnoPrev(cur).t))} del ${fdKey(turnoPrev(cur).f)}): <b>${evOk} de ${act.length}</b> residentes.</div>
     <h3 class="sub">Detectado automáticamente (últimas 12 h)</h3>${filas.length?filas.map(([r,it])=>`<div class="rec"><b><a href="#/r/${r.id}/ctl">${esc(r.ap+', '+r.no)}</a></b> <span class="muted small">${esc(r.hab)}</span><div class="alerts" style="margin-top:6px">${it.map(x=>`<div class="al ${x[0]}">${esc(x[1])}</div>`).join('')}</div></div>`).join(''):'<p class="empty">Nada fuera de lo común.</p>'}
     <h3 class="sub">Novedades escritas (últimas 48 h)</h3>${nov.map(n=>novCard(n)).join('')||'<p class="empty">Sin novedades.</p>'}</div></div>`;
 }
 function novCard(n){
   const r=n.resId&&getRes(n.resId),leido=(n.lecturas||[]).some(l=>l.por===SESSION.user&&!l.anul);
-  return `<div class="rec ${recCls(n)}" ${n.importante&&valid(n)?'style="border-left:5px solid var(--bad)"':''}><div class="top2"><b>${fd(n.ts)} — turno ${esc(n.turno.toLowerCase())}${n.importante?' — <span style="color:var(--bad)">IMPORTANTE</span>':''}</b>${firma(n.por,n.ts)}</div>
+  return `<div class="rec ${recCls(n)}" ${n.importante&&valid(n)?'style="border-left:5px solid var(--bad)"':''}><div class="top2"><b>${fdKey(eF(n))} — turno ${esc(tTxt(n.turno))}${n.importante?' — <span style="color:var(--bad)">IMPORTANTE</span>':''}</b>${firma(n.por,n.ts)}</div>
     <div class="body" style="margin-top:6px">${r?`<a href="#/r/${r.id}/datos">${esc(r.ap+', '+r.no)}</a>: `:''}${esc(n.texto)}</div>
     <div class="small muted" style="margin-top:6px">Leído por: ${(n.lecturas||[]).length?(n.lecturas.map((l,i)=>l.anul?`<s>${esc(uName(l.por))} ${ft(l.ts)}</s> <span style="color:var(--bad)">(anulada por error ${ft(l.anul.fecha)})</span>`:esc(uName(l.por))+' '+ft(l.ts)+(l.por===SESSION.user&&valid(n)?` <button class="btn sm" onclick="anularLectura('${n.id}',${i})">Anular por error</button>`:'')).join(' · ')):'nadie todavía'}</div>${recNotes('nov',n)}
     <div class="acts">${valid(n)&&!leido&&n.por!==SESSION.user?`<button class="btn sm ok" onclick="leerNov('${n.id}')">Tomé conocimiento</button>`:''}${recActs('nov',n).replace('<div class="acts no-print">','').replace(/<\/div>$/,'')}</div></div>`;
@@ -1472,7 +1612,7 @@ function formNov(rid,corrId){
   modal(corrId?'Corregir novedad':'Novedad para el pase de guardia',`<label class="fl">Residente (opcional)<select name="res"><option value="">General / varios</option>${act.map(r=>`<option value="${r.id}"${o.resId===r.id?' selected':''}>${esc(r.ap+', '+r.no)}</option>`).join('')}</select></label>
     <label class="fl">Novedad<textarea name="texto" rows="4" required>${esc(o.texto)}</textarea></label><label class="chk"><input type="checkbox" name="imp" ${o.importante?'checked':''}> Importante (se destaca en rojo)</label>${corrId?'':papelBlock()}`,corrId?'Guardar corrección':'Publicar',fd=>{
     const t=String(fd.get('texto')||'').trim();if(t.length<5)return 'Escribí la novedad.';
-    return saveRec('nov',{resId:fd.get('res')||'',texto:t,importante:!!fd.get('imp'),turno:turnoDe(Date.now()),lecturas:[]},fd,corrId,'Novedad de guardia');});
+    return saveRec('nov',{resId:fd.get('res')||'',texto:t,importante:!!fd.get('imp'),turno:turnoDe(Date.now()),fechaT:fechaTurno(Date.now()),lecturas:[]},fd,corrId,'Novedad de guardia');});
 }
 
 /* ---------- resumen mensual ---------- */
@@ -1492,10 +1632,13 @@ function statsMes(r,mes){
   const evm=S.evm.filter(x=>x.resId===r.id&&inM(x)).sort((x,y)=>x.ts-y.ts),allEvm=byRes('evm',r.id);
   const p0=keyToTs(mes+'-01','00:00'),pE=Math.min(r.estado==='activo'?Date.now():keyToTs(r.egreso.fecha,'23:59'),keyToTs(addDays(mes+'-01',32).slice(0,7)+'-01','00:00'));
   const huecos=[],prev=allEvm.filter(x=>x.ts<p0).pop();let cur=prev?prev.ts:Math.max(p0,keyToTs(r.ingreso,'00:00'));
-  evm.forEach(x=>{if(x.ts-cur>7*DAY)huecos.push('entre el '+fd(cur)+' y el '+fd(x.ts));cur=x.ts;});
-  if(pE-cur>7*DAY)huecos.push('desde el '+fd(cur)+' sin evolución');
-  const eve=S.eve.filter(x=>x.resId===r.id&&inM(x)),inc=S.inc.filter(x=>x.resId===r.id&&inM(x)),evesp=S.evesp.filter(x=>x.resId===r.id&&inM(x));
-  return {nCtl:c.length,filas,dad,no,sos,evm,huecos,eve,inc,evesp};
+  evm.forEach(x=>{if(x.ts-cur>EVM_DIAS*DAY)huecos.push('entre el '+fd(cur)+' y el '+fd(x.ts));cur=x.ts;});
+  if(pE-cur>EVM_DIAS*DAY)huecos.push('desde el '+fd(cur)+' sin evolución');
+  const eve=S.eve.filter(x=>x.resId===r.id&&valid(x)&&eF(x).slice(0,7)===mes),inc=S.inc.filter(x=>x.resId===r.id&&inM(x)),evesp=S.evesp.filter(x=>x.resId===r.id&&inM(x));
+  /* cobertura de la evolución de enfermería: turnos terminados del mes con al menos una evolución */
+  const e0=byRes('eve',r.id)[0],ing=Math.max(keyToTs(r.ingreso,'00:00'),e0?turnoIni({f:eF(e0),t:e0.turno}):Infinity),tFal=[];let tTot=0; /* se cuenta desde el primer registro en el sistema */
+  for(let k=mes+'-01';k.slice(0,7)===mes;k=addDays(k,1))for(const t of ['Día','Noche']){const x={f:k,t};if(turnoIni(x)<ing||turnoFin(x)>pE)continue;tTot++;if(!eve.some(e=>e.turno===t&&eF(e)===k))tFal.push(x);}
+  return {nCtl:c.length,filas,dad,no,sos,evm,huecos,eve,inc,evesp,tTot,tFal};
 }
 function statsHtml(r,mes){
   const s=statsMes(r,mes);let h=`<h3 class="sub">Controles de enfermería (${s.nCtl} registros)</h3>`;
@@ -1504,8 +1647,9 @@ function statsHtml(r,mes){
   h+=`<h3 class="sub">Medicación</h3><p>Dosis registradas: <b>${tot}</b> · dadas: <b>${s.dad}</b> · no dadas: <b>${s.no.length}</b>${tot?' · cumplimiento: <b>'+Math.round(s.dad/tot*100)+' %</b>':''} · a demanda (SOS): <b>${s.sos}</b></p>`;
   if(s.no.length)h+='<ul class="li">'+s.no.map(x=>{const i=getInd(x.indId);return `<li>${fdKey(x.dia)} ${x.hora} — ${esc(i?i.farmaco:'')}: ${esc(x.motivo)}</li>`;}).join('')+'</ul>';
   h+=`<h3 class="sub">Evoluciones médicas (${s.evm.length})</h3><p>${s.evm.length?s.evm.map(x=>fd(x.ts)).join(' · '):'Ninguna'}</p>`;
-  h+=s.huecos.length?`<div class="status bad">Semanas sin evolución médica: ${s.huecos.join('; ')}</div>`:'<div class="status ok">Evolución semanal cumplida en el período.</div>';
-  h+=`<h3 class="sub">Enfermería</h3><p>Notas de turno: <b>${s.eve.length}</b> · incidentes registrados: <b>${s.inc.length}</b></p>`;
+  h+=s.huecos.length?`<div class="status bad">Más de ${EVM_DIAS} días sin evolución médica: ${s.huecos.join('; ')}</div>`:'<div class="status ok">Evolución quincenal cumplida en el período.</div>';
+  h+=`<h3 class="sub">Enfermería</h3><p>Evoluciones de turno: <b>${s.eve.length}</b> · turnos con evolución: <b>${s.tTot-s.tFal.length} de ${s.tTot}</b> · incidentes registrados: <b>${s.inc.length}</b></p>`;
+  if(s.tFal.length)h+=`<div class="status warn" style="display:block">Turnos sin evolución de enfermería: ${s.tFal.slice(0,12).map(x=>fdKey(x.f).slice(0,5)+' '+tTxt(x.t)).join(' · ')}${s.tFal.length>12?' · y '+(s.tFal.length-12)+' más':''}</div>`;
   {const cnt={};s.evesp.forEach(x=>cnt[x.especialidad]=(cnt[x.especialidad]||0)+1);h+=`<h3 class="sub">Especialistas</h3><p>${Object.keys(cnt).length?Object.keys(cnt).map(k=>esc(k)+': <b>'+cnt[k]+'</b>').join(' · '):'Sin evoluciones de especialistas este mes.'}</p>`;}
   if(s.inc.length)h+='<ul class="li">'+s.inc.map(x=>`<li>${fdt(x.ts)} — <b>${esc(x.tipo)}</b>: ${esc(x.texto)}</li>`).join('')+'</ul>';
   return h;
@@ -1542,11 +1686,11 @@ function tabLegajo(r){
   return `<div class="no-print card"><div class="sec-h"><h2>Legajo del residente</h2><button class="btn pri" onclick="imprimir('legajo','${r.id}')">Imprimir / guardar PDF</button></div>
     <p class="hint" style="margin-bottom:0">Reúne todas las secciones en orden. Al imprimir, cada hoja lleva "Folio N de M" y el nombre del residente al pie. Para PDF: elegir "Guardar como PDF" en la ventana de impresión. Lo anulado y lo corregido aparecen tachados: también es parte de la historia clínica.</p></div>${legajoHtml(r)}`;
 }
-function imprimir(que,rid){finBlanco();audit(que==='legajo'?'Impresión / PDF de legajo':'Impresión de planilla de contingencia',rid||'',que==='contingencia'?'Turno '+(UI.cgTurno||turnoDe(Date.now()))+' '+fdKey(UI.cgDia||dayKey(Date.now())):'');save();try{window.print();}catch(e){}}
+function imprimir(que,rid){finBlanco();audit(que==='legajo'?'Impresión / PDF de legajo':'Impresión de planilla de contingencia',rid||'',que==='contingencia'?'Turno '+((UI.cgTurno||turnoDe(Date.now()))==='Todos'?'06 a 18 h y 18 a 06 h':tTxt(UI.cgTurno||turnoDe(Date.now())))+' del '+fdKey(UI.cgDia||fechaTurno(Date.now())):'');save();try{window.print();}catch(e){}}
 function lgEnt(x,inner){return `<div class="lg-ent ${recCls(x)}"><div class="tx">${inner}</div>${x.papel?`<div class="small">Cargado desde papel el ${fdt(x.tc)}.</div>`:''}${x.corr?`<div class="small">Corregido por su autor el ${fdt(x.corr.fecha)}.</div>`:''}${x.anul?`<div class="small" style="color:#C62828">ANULADO el ${fdt(x.anul.fecha)} por ${esc(uFull(x.anul.por))}. Motivo: ${esc(x.anul.motivo)}</div>`:''}</div>`;}
 function legajoHtml(r){
   const now=Date.now();
-  const SEC=['Datos personales e ingreso','Documentación','Antecedentes y alergias','Medicación habitual al ingreso','Exámenes de ingreso','Escalas geriátricas','Indicaciones médicas (historial completo)','Administración de medicación','Controles de enfermería','Evolución médica','Evolución de enfermería','Evolución de especialistas','Caídas e incidentes','Agenda de turnos y estudios','Resúmenes mensuales','Cierre y firmas'];
+  const SEC=['Datos personales e ingreso','Documentación','Antecedentes y alergias','Medicación habitual al ingreso','Exámenes de ingreso','Escalas geriátricas','Indicaciones médicas (historial completo)','Administración de medicación','Controles de enfermería','Evolución médica (quincenal)','Evolución de enfermería por turno (06 a 18 h y 18 a 06 h)','Evolución de especialistas','Caídas e incidentes','Agenda de turnos y estudios','Resúmenes mensuales','Cierre y firmas'];
   const sec=(n,body)=>`<section class="lg-sec"><h2>${n}. ${SEC[n-1]}</h2>${body}</section>`;
   let h=`<article class="legajo"><section class="lg-cover"><div class="est">${esc('Residencia de Adultos Mayores "'+S.config.nombre+'"')}</div><div class="small">Calle Inventada 500, Bahía Blanca, Prov. de Buenos Aires (ficticio)<br>Habilitación provincial N° 0000/00 (ficticio) · Categoría A — Res. 3904/2013 art. 5</div>
     <div class="tit">LEGAJO PERSONAL E HISTORIA CLÍNICA</div><div class="small">Ley 14.263 art. 6 inc. g (legajo por residente) · Ley 26.529 arts. 12 a 18 (historia clínica)</div>
@@ -1570,7 +1714,7 @@ function legajoHtml(r){
     return `<tr class="${a.anul?'anul':''}"><td>${fdKey(k)}</td><td>${a.hora}</td><td>${esc(i?i.farmaco+' '+i.dosis:'')}</td><td>${a.estado==='dado'?'Dado':'NO DADO: '+esc(a.motivo)}${a.hora==='SOS'&&a.motivo?' ('+esc(a.motivo)+')':''}${a.papel?' [papel]':''}</td><td>${ft(a.ts)}</td><td>${esc(uName(a.por))}</td></tr>${a.anul?`<tr><td colspan="6" class="anl small" style="color:#C62828">Anulado el ${fdt(a.anul.fecha)} por ${esc(uFull(a.anul.por))}. Motivo: ${esc(a.anul.motivo)}</td></tr>`:''}`;}).join('')).join('')}</tbody></table></div>`:'<p class="empty">Sin registros.</p>');
   h+=sec(9,(r.rangosHist.length?'<h3>Rangos de alarma propios</h3><ul class="li">'+r.rangosHist.map(x=>`<li>${fdt(x.ts)} — ${RANGE_LBL[x.k]}: ${esc(x.antes)} → ${esc(x.despues)}. ${esc(x.motivo)} (${esc(uName(x.por))})</li>`).join('')+'</ul>':'')+`<div class="chart" style="border:0;padding:0">${chartSvg(r,'ta')}</div>`+ctlTable(r,false,0));
   h+=sec(10,byRes('evm',r.id,true).map(e=>lgEnt(e,`<b>${fdt(e.ts)}</b> — ${esc(e.texto)}${e.plan?' <b>Plan:</b> '+esc(e.plan):''}<br><span class="small">Firma: ${esc(uFull(e.por))}</span>`)).join('')||'<p class="empty">Sin evoluciones.</p>');
-  h+=sec(11,byRes('eve',r.id,true).map(e=>{const tg=EVG.map(g=>e[g[0]]?g[1]+': '+esc(e[g[0]]):'').filter(Boolean).join(' · ');return lgEnt(e,`<b>${fdt(e.ts)} — turno ${esc(e.turno.toLowerCase())}</b> — ${tg}${e.texto?'. '+esc(e.texto):''}<br><span class="small">Firma: ${esc(uFull(e.por))}</span>`);}).join('')||'<p class="empty">Sin notas.</p>');
+  h+=sec(11,'<p class="small">Dos turnos por día: 06 a 18 h y 18 a 06 h. El turno de 18 a 06 lleva la fecha del día en que empezó. Los turnos sin evolución figuran en los resúmenes mensuales (sección 15).</p>'+byRes('eve',r.id,true).sort((a,b)=>turnoIni({f:eF(a),t:a.turno})-turnoIni({f:eF(b),t:b.turno})||a.ts-b.ts).map(e=>{const tg=EVG.map(g=>e[g[0]]?g[1]+': '+esc(e[g[0]]):'').filter(Boolean).join(' · ');return lgEnt(e,`<b>${fdKey(eF(e))} — turno ${esc(tTxt(e.turno))}</b> — ${tg}${e.texto?'. '+esc(e.texto):''}<br><span class="small">Firma: ${esc(uFull(e.por))} · escrita el ${fdt(e.ts)}</span>`);}).join('')||'<p class="empty">Sin notas.</p>');
   h+=sec(12,evespList(r,true,''));
   h+=sec(13,incList(r,true));
   h+=sec(14,S.age.filter(x=>x.resId===r.id).sort((a,b)=>a.fecha-b.fecha).map(x=>ageItem(x,false,true)).join('')||'<p class="empty">Sin turnos.</p>');
@@ -1585,37 +1729,41 @@ function legajoHtml(r){
    CONTINGENCIA (corte de luz / caída)
    ========================================================= */
 function renderCont(){
-  const now=Date.now(),dk=UI.cgDia||dayKey(now),tSel=UI.cgTurno||turnoDe(now);
-  const turnos=tSel==='Todos'?['Mañana','Tarde','Noche']:[tSel];
+  const now=Date.now(),dk=UI.cgDia||fechaTurno(now),tSel=UI.cgTurno||turnoDe(now);
+  const turnos=tSel==='Todos'?['Día','Noche']:[tSel];
+  /* medicación del turno: el de 18 a 06 incluye las dosis de la madrugada del día siguiente */
+  const slotsTurno=(rid,tu)=>{const hh=s=>+s.hora.slice(0,2);return tu==='Día'?slotsDia(rid,dk).filter(s=>hh(s)>=6&&hh(s)<18):slotsDia(rid,dk).filter(s=>hh(s)>=18).concat(slotsDia(rid,addDays(dk,1)).filter(s=>hh(s)<6));};
   const todos=S.residents.filter(r=>r.estado==='activo').sort((a,b)=>a.hab.localeCompare(b.hab,'es',{numeric:true}));
   if(UI.cgRes&&!todos.some(r=>r.id===UI.cgRes))UI.cgRes=null;
   const act=UI.cgRes?todos.filter(r=>r.id===UI.cgRes):todos;
   let h=`<div class="wrap"><div class="card no-print"><div class="sec-h"><h2>Planilla de contingencia</h2><div class="row"><button class="btn pri" onclick="imprimir('contingencia')">Imprimir</button><button class="btn" onclick="imprimirBlanco()">Planilla en blanco</button></div></div>
     <label class="fl">Planilla por paciente<select onchange="UI.cgRes=this.value||null;render()"><option value="">Todos los residentes</option>${todos.map(r=>`<option value="${r.id}" ${UI.cgRes===r.id?'selected':''}>${esc(r.ap+', '+r.no)} — ${esc(r.hab)}</option>`).join('')}</select></label>
     <p class="hint">Para imprimir <b>todos los días</b> al empezar la mañana y tener en la carpeta de enfermería. Si se corta la luz o se cae el sistema, se anota a mano acá; al volver, se carga marcando "Cargado desde papel". <a href="#/corte">Ver el procedimiento</a>.</p>
-    <div class="row"><label class="fl" style="margin:0">Día<input type="date" value="${dk}" onchange="UI.cgDia=this.value||null;render()"></label>
-    <div class="seg">${['Mañana','Tarde','Noche','Todos'].map(t=>`<button class="${tSel===t?'on':''}" onclick="UI.cgTurno='${t}';render()">${t==='Todos'?'Los 3 turnos':t}</button>`).join('')}</div></div></div>`;
+    <div class="row"><label class="fl" style="margin:0">Día del turno<input type="date" value="${dk}" onchange="UI.cgDia=this.value||null;render()"></label>
+    <div class="seg">${['Día','Noche','Todos'].map(t=>`<button class="${tSel===t?'on':''}" onclick="UI.cgTurno='${t}';render()">${t==='Todos'?'Los 2 turnos':'Turno '+tTxt(t)}</button>`).join('')}</div></div>
+    <p class="small muted" style="margin:6px 0 0">El turno de 18 a 06 lleva la fecha del día en que empieza e incluye la medicación de la madrugada siguiente.</p></div>`;
   turnos.forEach(tu=>{
-    h+=`<div class="cg cg-turno"><div class="cg-h"><div><b style="font-family:Georgia,serif;text-transform:uppercase;letter-spacing:.06em">${esc(S.config.nombre)}</b> — PLANILLA DE CONTINGENCIA<br>Día <b>${fdKey(dk)}</b> · Turno <b>${tu}</b> (${TURNO_TXT[tu]})</div><div class="small">Impresa el ${fdt(now)} por ${esc(uFull(SESSION.user))}<br>Emergencias: 0291 555-0911 (ficticio) · Médica: 0291 555-0101 (ficticio)</div></div>
+    h+=`<div class="cg cg-turno"><div class="cg-h"><div><b style="font-family:Georgia,serif;text-transform:uppercase;letter-spacing:.06em">${esc(S.config.nombre)}</b> — PLANILLA DE CONTINGENCIA<br>Día del turno <b>${fdKey(dk)}</b> · Turno <b>${tTxt(tu)}</b>${tu==='Noche'?' (termina el '+fdKey(addDays(dk,1))+' a las 06:00)':''}</div><div class="small">Impresa el ${fdt(now)} por ${esc(uFull(SESSION.user))}<br>Emergencias: 0291 555-0911 (ficticio) · Médica: 0291 555-0101 (ficticio)</div></div>
       <p class="small">Marcar <span class="box"></span> D = dado · <span class="box"></span> N = no dado (escribir motivo). Anotar hora real y firmar. Al volver el sistema, cargar todo como "Cargado desde papel" y archivar esta hoja en el legajo.</p>`;
     act.forEach(r=>{
-      const sl=slotsDia(r.id,dk).filter(s=>turnoDe(s.ts)===tu);
+      const sl=slotsTurno(r.id,tu);
       const sos=S.ind.filter(i=>i.resId===r.id&&i.tipo==='med'&&!i.horarios.length&&estadoInd(i)==='vigente');
       const gen=S.ind.filter(i=>i.resId===r.id&&i.tipo!=='med'&&estadoInd(i)==='vigente');const alg=alergiasDe(r);
       h+=`<div class="cg-res"><div class="row" style="justify-content:space-between"><b>${esc(r.ap+', '+r.no)}</b><span>${esc(r.hab)} · DNI ${esc(r.dni)} · ${esc(r.os)}</span></div>
         <div style="margin:4px 0">${alg.length?`<b style="color:#C62828">ALERGIAS: ${esc(alg.join('; '))}</b>`:'Sin alergias conocidas'}</div>
         <table><thead><tr><th>Hora</th><th>Medicación (indicaciones vigentes)</th><th>D / N</th><th>Hora real</th><th>Motivo si no se dio</th><th>Firma</th></tr></thead><tbody>
-        ${sl.length?sl.map(s=>`<tr><td><b>${s.hora}</b></td><td>${indDesc(s.ind)}${s.ind.obs?`<div class="small">${esc(s.ind.obs)}</div>`:''}</td><td style="white-space:nowrap"><span class="box"></span>D <span class="box"></span>N</td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>`).join(''):'<tr><td colspan="6" class="small">Sin medicación programada en este turno.</td></tr>'}
+        ${sl.length?sl.map(s=>`<tr><td><b>${s.hora}</b>${dayKey(s.ts)!==dk?`<div class="small">(${fdKey(dayKey(s.ts)).slice(0,5)})</div>`:''}</td><td>${indDesc(s.ind)}${s.ind.obs?`<div class="small">${esc(s.ind.obs)}</div>`:''}</td><td style="white-space:nowrap"><span class="box"></span>D <span class="box"></span>N</td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>`).join(''):'<tr><td colspan="6" class="small">Sin medicación programada en este turno.</td></tr>'}
         ${sos.map(i=>`<tr><td>SOS</td><td>${indDesc(i)}${i.obs?`<div class="small">${esc(i.obs)}</div>`:''}</td><td></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>`).join('')}</tbody></table>
         ${gen.length?`<div class="small" style="margin-top:4px"><b>Otras indicaciones:</b> ${gen.map(i=>esc(i.farmaco)+(i.obs?' ('+esc(i.obs)+')':'')).join(' · ')}</div>`:''}
         <table style="margin-top:6px"><thead><tr><th>Hora</th><th>TA</th><th>FC</th><th>T°</th><th>SatO₂</th><th>FR</th><th>Glucemia</th><th>Dolor</th><th>Diuresis</th><th>Firma</th></tr></thead><tbody>${'<tr>'+'<td class="blank"></td>'.repeat(10)+'</tr>'}${'<tr>'+'<td class="blank"></td>'.repeat(10)+'</tr>'}</tbody></table>
+        <div class="small" style="margin-top:6px"><b>Evolución de enfermería del turno</b> — Hora: <span class="fill" style="min-width:60px"></span> Firma: <span class="fill" style="min-width:140px"></span></div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
         <div class="small" style="margin-top:6px">Novedades:</div><div class="lines"></div><div class="lines"></div></div>`;});
     h+='</div>';});
   return h+'</div>';
 }
 function planillaBlanco(){
   const rows=(n,c)=>('<tr>'+'<td class="blank"></td>'.repeat(c)+'</tr>').repeat(n);
-  return `<div class="cg only-print"><div class="cg-h"><div><b style="font-family:Georgia,serif;text-transform:uppercase;letter-spacing:.06em">${esc(S.config.nombre)}</b> — PLANILLA EN BLANCO (CONTINGENCIA)<br>Día <span class="fill" style="min-width:90px"></span> · Turno <span class="box"></span>Mañana <span class="box"></span>Tarde <span class="box"></span>Noche</div><div class="small">Para usar si se corta la luz o se cae el sistema.<br>Una hoja por residente y por turno.</div></div>
+  return `<div class="cg only-print"><div class="cg-h"><div><b style="font-family:Georgia,serif;text-transform:uppercase;letter-spacing:.06em">${esc(S.config.nombre)}</b> — PLANILLA EN BLANCO (CONTINGENCIA)<br>Día del turno <span class="fill" style="min-width:90px"></span> · Turno <span class="box"></span>06 a 18 h <span class="box"></span>18 a 06 h<div class="small">El turno de 18 a 06 lleva la fecha del día en que empezó.</div></div><div class="small">Para usar si se corta la luz o se cae el sistema.<br>Una hoja por residente y por turno.</div></div>
   <div class="cg-res">
     <div style="margin-bottom:6px">Residente: <span class="fill" style="min-width:220px"></span> Hab.: <span class="fill" style="min-width:50px"></span> DNI: <span class="fill" style="min-width:100px"></span></div>
     <div style="margin-bottom:8px">Obra social: <span class="fill" style="min-width:140px"></span> <b style="color:#C62828">ALERGIAS:</b> <span class="fill" style="min-width:200px"></span></div>
@@ -1623,7 +1771,7 @@ function planillaBlanco(){
     <table><thead><tr><th>Hora</th><th style="width:34%">Medicación y dosis</th><th>D / N</th><th>Hora real</th><th>Motivo si no se dio</th><th>Firma</th></tr></thead><tbody>${rows(8,6)}</tbody></table>
     <div class="small" style="margin-top:8px"><b>CONTROLES DE SIGNOS VITALES</b></div>
     <table><thead><tr><th>Hora</th><th>TA</th><th>FC</th><th>T°</th><th>SatO₂</th><th>FR</th><th>Glucemia</th><th>Dolor</th><th>Diuresis</th><th>Firma</th></tr></thead><tbody>${rows(4,10)}</tbody></table>
-    <div class="small" style="margin-top:8px"><b>EVOLUCIÓN DE ENFERMERÍA</b></div><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
+    <div class="small" style="margin-top:8px"><b>EVOLUCIÓN DE ENFERMERÍA DEL TURNO</b> — Hora: <span class="fill" style="min-width:60px"></span> Firma: <span class="fill" style="min-width:140px"></span></div><div class="lines"></div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
     <div class="small" style="margin-top:8px"><b>NOVEDADES PARA EL PASE DE GUARDIA</b> <span class="box"></span> Importante</div><div class="lines"></div><div class="lines"></div><div class="lines"></div>
     <div style="margin-top:12px">Firma y aclaración: <span class="fill" style="min-width:220px"></span> Matrícula: <span class="fill" style="min-width:80px"></span></div>
   </div>
@@ -1636,7 +1784,7 @@ function finBlanco(){document.body.classList.remove('pb');const z=document.getEl
 function renderCorte(){
   return `<div class="wrap"><div class="card no-print"><h2>Planilla en blanco para escribir a mano</h2><p class="hint">Las mismas secciones y columnas del sistema (datos, alergias, medicación, controles, evolución y novedades), para completar a mano alzada. <b>Hay que tenerla impresa antes</b>: durante el corte no se puede descargar. Para el día a día está la planilla precargada, que imprime administración; esta es la reserva (residente nuevo, o si la precargada no se llegó a imprimir).</p><button class="btn pri" onclick="imprimirBlanco()">Descargar planilla en blanco</button><p class="small muted" style="margin-top:6px">Se abre la ventana de impresión: elegí la impresora, o "Guardar como PDF" para descargarla. Imprimí las copias necesarias (una por residente y por turno).</p></div><div class="card no-print"><h2>Si se corta la luz o se cae el sistema</h2><p class="hint">Procedimiento de 4 pasos. Lo importante es que <b>nunca falte la información para atender</b> y que después todo quede cargado con la hora real.</p>
   <ol class="steps">
-   <li><b>Antes, todos los días.</b> Al empezar el día, administración imprime la planilla de contingencia de los 3 turnos y la deja en la carpeta del office de enfermería. El administrador descarga un <a href="#/respaldo">respaldo completo</a> y lo guarda en dos lugares (pendrive y nube). El sistema le avisa si pasaron más de ${S.config.backupHoras} h.</li>
+   <li><b>Antes, todos los días.</b> Al empezar el día, administración imprime la planilla de contingencia de los 2 turnos (06 a 18 h y 18 a 06 h) y la deja en la carpeta del office de enfermería. El administrador descarga un <a href="#/respaldo">respaldo completo</a> y lo guarda en dos lugares (pendrive y nube). El sistema le avisa si pasaron más de ${S.config.backupHoras} h.</li>
    <li><b>Durante el corte.</b> Se trabaja con la planilla en papel: tiene alergias, indicaciones vigentes y horarios. Se anota cada dosis y control <b>con la hora real y firma</b>. Si la duda es una indicación, vale la impresa del día; ante algo nuevo, se llama a la médica.</li>
    <li><b>Si el equipo no vuelve.</b> En otra computadora, el administrador abre este sistema y usa <b>"Restaurar desde respaldo"</b> con el último archivo. El sistema verifica el código de integridad antes de aceptarlo.</li>
    <li><b>Al volver.</b> Se carga lo anotado marcando <b>"Cargado desde papel"</b> con la fecha y hora real (en medicación, activar el modo "cargar desde papel"). Queda registrado cuándo se hizo y cuándo se cargó. La hoja firmada se archiva en el legajo.</li>
@@ -1667,8 +1815,10 @@ function exportCSV(tipo){
   if(!can('exportar'))return deny('exportar planillas');
   const resN=id=>{const r=getRes(id);return r?r.ap+', '+r.no:id;};let rows,name;
   if(tipo==='ctl'){rows=[['Residente','DNI','Fecha','Hora','TA sist','TA diast','FC','Temp','SatO2','FR','Glucemia','Peso','Diuresis','Catarsis','Dolor','Observaciones','Registró','Desde papel','Estado']].concat(S.ctl.slice().sort((a,b)=>a.ts-b.ts).map(c=>[resN(c.resId),(getRes(c.resId)||{}).dni,fd(c.ts),ft(c.ts),c.tas,c.tad,c.fc,num(c.temp),c.sat,c.fr,c.glu,num(c.peso),c.diuresis,c.catarsis,c.dolor,c.obs,uFull(c.por),c.papel?'Sí':'No',estadoTxt(c)]));name='controles';}
+  else if(tipo==='eve'){rows=[['Residente','DNI','Fecha del turno','Turno','Escrita el','Hora','Higiene','Alimentación','Ánimo / conducta','Descanso','Movilidad','Incidencias','Novedades','Registró','Desde papel','Estado']].concat(S.eve.slice().sort((a,b)=>turnoIni({f:eF(a),t:a.turno})-turnoIni({f:eF(b),t:b.turno})||a.ts-b.ts).map(e=>[resN(e.resId),(getRes(e.resId)||{}).dni,fdKey(eF(e)),tTxt(e.turno),fd(e.ts),ft(e.ts),e.higiene,e.alim,e.animo,e.descanso,e.movil,e.incid,e.texto,uFull(e.por),e.papel?'Sí':'No',estadoTxt(e)]));name='evolucion-enfermeria';}
+  else if(tipo==='vis'){rows=[['Fecha','Hora','DNI del visitante','Residente','Registró','Estado','Anulada por','Fecha de anulación']].concat(S.vis.slice().sort((a,b)=>a.ts-b.ts).map(v=>[fd(v.ts),ft(v.ts),v.dni,resN(v.resId),uFull(v.por),estadoTxt(v),v.anul?uFull(v.anul.por):'',v.anul?fdt(v.anul.fecha):'']));name='visitas';}
   else{rows=[['Residente','DNI','Día','Horario','Medicamento','Dosis','Estado','Motivo','Hora real','Registró','Desde papel','Anulado']].concat(S.dosis.slice().sort((a,b)=>a.ts-b.ts).map(a=>{const i=getInd(a.indId)||{};return [resN(a.resId),(getRes(a.resId)||{}).dni,fdKey(a.dia),a.hora,i.farmaco,i.dosis,a.estado==='dado'?'Dado':'No dado',a.motivo,fdt(a.ts),uFull(a.por),a.papel?'Sí':'No',a.anul?'Sí: '+a.anul.motivo:'No'];}));name='medicacion';}
-  audit('Exportación CSV de '+(tipo==='ctl'?'controles':'medicación'),'',(rows.length-1)+' filas');save();
+  audit('Exportación CSV de '+({ctl:'controles',eve:'evolución de enfermería',vis:'visitas'}[tipo]||'medicación'),'',(rows.length-1)+' filas');save();
   download(name+'-nuestrohogar-'+stamp(Date.now())+'.csv',CSV(rows),'text/csv;charset=utf-8');toast('Planilla descargada ('+(rows.length-1)+' filas)');
 }
 async function checkRestore(text){
@@ -1676,6 +1826,7 @@ async function checkRestore(text){
   if(!o||o.formato!=='nuestrohogar-respaldo'||!o.datos||typeof o.datos!=='object')return {ok:false,err:'El archivo no es un respaldo de este sistema.'};
   const d=o.datos,raw=JSON.stringify(d),req=['residents','audit'].concat(COLS);
   if((o.version||0)<5&&!Array.isArray(d.evesp))d.evesp=[];
+  if((o.version||0)<6&&!Array.isArray(d.vis))d.vis=[];
   for(const k of req)if(!Array.isArray(d[k]))return {ok:false,err:'Al respaldo le falta la sección "'+k+'". Está incompleto o dañado.'};
   if(!d.users||typeof d.users!=='object'||!Object.values(d.users).some(u=>u.rol==='admin'&&u.estado==='activo'))return {ok:false,err:'El respaldo no tiene un administrador activo: no se podría volver a entrar.'};
   if(!d.config)return {ok:false,err:'Al respaldo le falta la configuración.'};
@@ -1716,7 +1867,7 @@ function renderRespaldo(){
   return `<div class="wrap"><div class="card"><h2>Respaldo y planillas</h2>
     <div class="status ${venc?'bad':'ok'}">${l?'Último respaldo: '+fdt(l)+(venc?` — <b>pasaron más de ${S.config.backupHoras} h</b>`:''):'<b>Nunca se hizo un respaldo.</b>'}</div>
     <p class="hint">El respaldo es un archivo .json con <b>todo</b> el sistema (residentes, registros, usuarios, auditoría) y un código de verificación SHA-256: si alguien cambia una letra del archivo, el sistema lo rechaza al restaurar. Guardarlo en dos lugares distintos. Contiene datos de salud: tratarlo como confidencial (Ley 25.326 art. 9).</p>
-    <div class="row"><button class="btn pri" onclick="exportBackup()">Descargar respaldo completo (.json)</button><button class="btn" onclick="exportCSV('ctl')">Controles (CSV para Excel)</button><button class="btn" onclick="exportCSV('dosis')">Medicación (CSV para Excel)</button></div>
+    <div class="row"><button class="btn pri" onclick="exportBackup()">Descargar respaldo completo (.json)</button><button class="btn" onclick="exportCSV('ctl')">Controles (CSV para Excel)</button><button class="btn" onclick="exportCSV('dosis')">Medicación (CSV para Excel)</button><button class="btn" onclick="exportCSV('eve')">Evolución de enfermería por turno (CSV)</button><button class="btn" onclick="exportCSV('vis')">Visitas (CSV)</button></div>
     ${S.config.lastBackupHash?`<p class="small muted" style="margin-top:8px">Código del último respaldo: <code style="word-break:break-all">${esc(S.config.lastBackupHash)}</code></p>`:''}</div>
     <div class="card"><h2>Restaurar desde un respaldo</h2>${can('restaurar')?`<p class="hint">Se usa si se rompe el equipo o se pierden los datos. Se elige el archivo, el sistema verifica el código y muestra un resumen antes de confirmar. Reemplaza todo lo actual (antes descarga una copia de lo actual).</p><label class="btn" style="display:inline-flex;align-items:center">Elegir archivo de respaldo…<input type="file" accept=".json,application/json" onchange="restoreFile(this)" style="display:none"></label>`:lockMsg('restaurar','restaurar respaldos')}</div></div>`;
 }
@@ -1770,7 +1921,7 @@ function formUser(id){
   modal(id?'Editar usuario':'Nuevo usuario',`<div class="fgrid"><label class="fl">Título<select name="t">${['Enf.','Dra.','Dr.','Sra.','Sr.','Lic.'].map(x=>`<option${u.t===x?' selected':''}>${x}</option>`).join('')}</select></label><label class="fl">Nombre y apellido<input name="n" value="${esc(u.n)}" required></label>
     <label class="fl">Rol<select name="rol" ${yo?'disabled':''}>${Object.keys(ROLES).map(k=>`<option value="${k}"${u.rol===k?' selected':''}>${ROLES[k]}</option>`).join('')}</select></label><label class="fl">Matrícula / área<input name="mat" value="${esc(u.mat)}"></label>
     <label class="fl">Especialidad (solo especialistas)<select name="esp"><option value="">—</option>${ESPECIALIDADES.map(x=>`<option${u.esp===x?' selected':''}>${x}</option>`).join('')}</select></label>
-    <label class="fl">Turno<select name="turno">${['','Mañana','Tarde','Noche','Franquero'].map(x=>`<option value="${x}"${u.turno===x?' selected':''}>${x||'—'}</option>`).join('')}</select></label><label class="fl">PIN (4 a 6 números)${id?' — dejar vacío para no cambiarlo':''}<input name="pin" inputmode="numeric" maxlength="6" autocomplete="off"></label></div>
+    <label class="fl">Turno<select name="turno">${['','Día','Noche','Franquero'].map(x=>`<option value="${x}"${u.turno===x?' selected':''}>${x?(TURNO_TXT[x]?x+' ('+TURNO_TXT[x]+')':x):'—'}</option>`).join('')}</select></label><label class="fl">PIN (4 a 6 números)${id?' — dejar vacío para no cambiarlo':''}<input name="pin" inputmode="numeric" maxlength="6" autocomplete="off"></label></div>
     ${yo?'<p class="small muted">No podés cambiar tu propio rol.</p>':''}<p class="small muted">En el sistema real: contraseña segura y matrícula verificada antes de habilitar a un profesional.</p>`,id?'Guardar':'Crear usuario',fd=>{
     const n=String(fd.get('n')||'').trim(),pin=String(fd.get('pin')||'').trim(),r=yo?u.rol:fd.get('rol');
     if(n.length<3)return 'Poné el nombre.';if((!id||pin)&&!/^\d{4,6}$/.test(pin))return 'El PIN tiene que tener de 4 a 6 números.';
@@ -1785,7 +1936,7 @@ function renderPermisos(){
   const rs=Object.keys(ROLES);
   return `<div class="wrap"><div class="card"><h2>Matriz de permisos</h2><p class="hint">Esta tabla es la que usa el sistema para habilitar cada botón: si acá no hay tilde, la acción no está disponible y el intento queda en la auditoría como "Acceso denegado".</p>
     <div class="tscroll"><table class="matrix"><thead><tr><th>Acción</th>${rs.map(k=>`<th style="text-align:center">${ROLES[k]}</th>`).join('')}</tr></thead><tbody>${PERM.map(p=>`<tr><td>${esc(p[1])}</td>${rs.map(k=>p[2].includes(k)?'<td class="y">Sí</td>':'<td class="n">—</td>').join('')}</tr>`).join('')}</tbody></table></div>
-    <h3 class="sub">Reglas que valen para todos</h3><ul class="li"><li><b>Nada se borra.</b> Ni el administrador puede borrar ni sobrescribir un registro clínico (Dec. 1089/2012 art. 15).</li><li><b>Anular</b> lo puede hacer solo quien escribió el registro (en indicaciones, también otro médico), siempre con motivo. Queda tachado y visible.</li><li><b>Corregir</b>: el autor puede corregir dentro de los primeros ${CORR_MIN} minutos; la versión anterior queda visible. Después, solo anular.</li><li>Un residente <b>egresado</b> no admite cargas nuevas; su historia clínica se conserva al menos 10 años.</li><li>El administrador del sistema <b>no ve la historia clínica</b> ni escribe en ella: gestiona usuarios, auditoría, respaldo y configuración.</li><li>Administración ve datos básicos, alergias, contactos, documentación y agenda; no ve lo clínico.</li></ul></div></div>`;
+    <h3 class="sub">Reglas que valen para todos</h3><ul class="li"><li><b>Nada se borra.</b> Ni el administrador puede borrar ni sobrescribir un registro clínico (Dec. 1089/2012 art. 15).</li><li><b>Anular</b> lo puede hacer solo quien escribió el registro (en indicaciones, también otro médico), siempre con motivo. Queda tachado y visible.</li><li><b>Corregir</b>: el autor puede corregir dentro de los primeros ${CORR_MIN} minutos; la versión anterior queda visible. Después, solo anular.</li><li>Un residente <b>egresado</b> no admite cargas nuevas; su historia clínica se conserva al menos 10 años.</li><li>El administrador del sistema <b>no ve la historia clínica</b> ni escribe en ella: gestiona usuarios, auditoría, respaldo y configuración.</li><li>Administración ve datos básicos, alergias, contactos, documentación y agenda; no ve lo clínico.</li><li><b>Visitas:</b> las registra el propio visitante en la pantalla de ingreso (DNI + residente), sin usuario y sin ver ningún dato. Las ven administración, enfermería y médicos; las anulan administración y enfermería (los que están en la puerta), con motivo y PIN.</li></ul></div></div>`;
 }
 function renderConfig(){
   const c=S.config;
